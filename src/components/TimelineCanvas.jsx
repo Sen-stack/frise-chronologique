@@ -1,18 +1,18 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { supabase } from '../supabase.js';
 import {
+  PERIOD_SEGMENTS,
+  DEFAULT_TAG_PALETTE,
+  COLOR_PRESETS,
   GLOBAL_MIN,
   GLOBAL_MAX,
   MINI_PAD,
   HANDLE_WIDTH,
   MINI_HEIGHT,
   BAR_HEIGHT,
-  PERIOD_SEGMENTS,
-  DEFAULT_TAG_PALETTE,
-  COLOR_PRESETS,
-  getAutoPeriod,
   formatYear,
   getTickInterval,
+  getAutoPeriod,
   getItemStyle
 } from '../utils/timelineMath.js';
 
@@ -30,11 +30,7 @@ export default function TimelineCanvas() {
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState([]);
 
-  // Split View
-  const [isSplitOpen, setIsSplitOpen] = useState(false);
-  const [splitEvent, setSplitEvent] = useState(null);
-
-  // Tags
+  // Répertoire des tags
   const [availableTags, setAvailableTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [newTagInput, setNewTagInput] = useState('');
 
@@ -45,7 +41,10 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modale
+  // Mode Split View (Approfondissement)
+  const [isSplitViewOpen, setIsSplitViewOpen] = useState(false);
+
+  // Formulaire d'ajout / modification
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,14 +56,13 @@ export default function TimelineCanvas() {
     ereDebut: 'CE',
     anneeFin: '',
     ereFin: 'CE',
-    tags: ["Sciences & Techniques"],
+    tags: [Object.keys(DEFAULT_TAG_PALETTE)[0]],
     couleur: COLOR_PRESETS[0].stroke,
     importance: 3,
     description: '',
-    carteHistoriqueUrl: '',
-    carteLegende: '',
     latitude: '',
-    longitude: ''
+    longitude: '',
+    cartesHistoriques: []
   });
 
   const viewRef = useRef(viewRange);
@@ -79,7 +77,6 @@ export default function TimelineCanvas() {
   }, [filterMode, selectedTags, customSelectedIds]);
 
   const hitboxesRef = useRef([]);
-
   const yearToMiniX = (year, width) => {
     const clamped = Math.max(GLOBAL_MIN, Math.min(GLOBAL_MAX, year));
     const usableW = width - 2 * MINI_PAD;
@@ -108,6 +105,7 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
+  // Dessin de la scène (Canvas)
   const drawScene = () => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -198,7 +196,7 @@ export default function TimelineCanvas() {
       const trackHeight = (BAR_HEIGHT - 6) / 2;
       const trackY = (idx % 2 === 0) ? barTop + 3 : barTop + 3 + trackHeight;
 
-      const isSelected = (selectedEvent && selectedEvent.id === p.id) || (splitEvent && splitEvent.id === p.id);
+      const isSelected = selectedEvent && selectedEvent.id === p.id;
 
       ctx.fillStyle = isSelected ? style.stroke : style.fill;
       ctx.fillRect(rX, trackY, rW, trackHeight);
@@ -232,7 +230,7 @@ export default function TimelineCanvas() {
       const yT = barTop - decalageY;
 
       const style = getItemStyle(evt);
-      const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
+      const isSelected = selectedEvent && selectedEvent.id === evt.id;
 
       ctx.strokeStyle = isSelected ? '#ffffff' : style.stroke;
       ctx.lineWidth = isSelected ? 2 : 1.5;
@@ -263,7 +261,7 @@ export default function TimelineCanvas() {
       hitboxesRef.current.push({ type: 'circle', x, y: yT, r: 14, evt });
     });
 
-    // Minimap
+    // Dessin de la minimap
     mctx.fillStyle = '#020617';
     mctx.fillRect(0, 0, mw, mh);
 
@@ -327,10 +325,13 @@ export default function TimelineCanvas() {
     if (!canvasMainRef.current || !canvasMiniRef.current) return;
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
-    const availableHeight = isSplitOpen ? totalH * 0.5 : totalH;
+
+    // Si Split View est ouvert, la frise occupe les 50 % inférieurs
+    const availableH = isSplitViewOpen ? totalH * 0.5 : totalH;
 
     canvasMainRef.current.width = totalW;
-    canvasMainRef.current.height = Math.max(100, availableHeight - MINI_HEIGHT);
+    canvasMainRef.current.height = Math.max(100, availableH - MINI_HEIGHT);
+
     canvasMiniRef.current.width = totalW;
     canvasMiniRef.current.height = MINI_HEIGHT;
 
@@ -361,12 +362,13 @@ export default function TimelineCanvas() {
     window.addEventListener('resize', updateSizesAndDraw);
     updateSizesAndDraw();
     return () => window.removeEventListener('resize', updateSizesAndDraw);
-  }, [isSplitOpen]);
+  }, [isSplitViewOpen]);
 
   useEffect(() => {
     drawScene();
-  }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent]);
+  }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, isSplitViewOpen]);
 
+  // Gestion des interactions de navigation (drag & zoom)
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -516,6 +518,7 @@ export default function TimelineCanvas() {
     };
   }, []);
 
+  // Ouverture modale d'ajout
   const handleOpenCreateModal = () => {
     setEditingEventId(null);
     setFormError('');
@@ -526,18 +529,18 @@ export default function TimelineCanvas() {
       ereDebut: 'CE',
       anneeFin: '',
       ereFin: 'CE',
-      tags: [availableTags[0] || "Sciences & Techniques"],
+      tags: [availableTags[0] || Object.keys(DEFAULT_TAG_PALETTE)[0]],
       couleur: COLOR_PRESETS[0].stroke,
       importance: 3,
       description: '',
-      carteHistoriqueUrl: '',
-      carteLegende: '',
       latitude: '',
-      longitude: ''
+      longitude: '',
+      cartesHistoriques: []
     });
     setIsModalOpen(true);
   };
 
+  // Ouverture modale d'édition
   const handleOpenEditModal = (evt) => {
     if (!evt) return;
     setEditingEventId(evt.id);
@@ -559,6 +562,14 @@ export default function TimelineCanvas() {
     const itemTags = Array.isArray(evt.tags) && evt.tags.length > 0 ? evt.tags : [evt.categorie || "Général"];
     const style = getItemStyle(evt);
 
+    // Récupération des cartes historiques existantes (format tableau ou rétro-compatibilité)
+    let cartesList = [];
+    if (Array.isArray(evt.cartes_historiques)) {
+      cartesList = evt.cartes_historiques;
+    } else if (evt.carte_historique_url) {
+      cartesList = [{ source: 'archive', titre: evt.carte_legende || 'Carte historique', url: evt.carte_historique_url }];
+    }
+
     setFormData({
       titre: evt.titre || '',
       anneeDebut: startAbs.toString(),
@@ -569,14 +580,14 @@ export default function TimelineCanvas() {
       couleur: evt.couleur || style.stroke,
       importance: evt.importance || 3,
       description: evt.description || '',
-      carteHistoriqueUrl: evt.carte_historique_url || '',
-      carteLegende: evt.carte_legende || '',
-      latitude: evt.latitude !== null && evt.latitude !== undefined ? evt.latitude.toString() : '',
-      longitude: evt.longitude !== null && evt.longitude !== undefined ? evt.longitude.toString() : ''
+      latitude: evt.latitude ?? '',
+      longitude: evt.longitude ?? '',
+      cartesHistoriques: cartesList
     });
     setIsModalOpen(true);
   };
 
+  // Suppression
   const handleDeleteEvent = async (evt) => {
     if (!evt) return;
     const confirmDelete = window.confirm(`Voulez-vous vraiment supprimer "${evt.titre}" ?`);
@@ -584,14 +595,11 @@ export default function TimelineCanvas() {
 
     const { error } = await supabase.from('evenements').delete().eq('id', evt.id);
     if (error) {
-      alert("Erreur lors de la suppression : " + error.message);
+      alert("Erreur de suppression : " + error.message);
     } else {
       setEvents(prev => prev.filter(e => e.id !== evt.id));
       setSelectedEvent(null);
-      if (splitEvent && splitEvent.id === evt.id) {
-        setIsSplitOpen(false);
-        setSplitEvent(null);
-      }
+      if (isSplitViewOpen) setIsSplitViewOpen(false);
     }
   };
 
@@ -619,6 +627,7 @@ export default function TimelineCanvas() {
     });
   };
 
+  // Enregistrement (Création ou Mise à jour)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -653,6 +662,9 @@ export default function TimelineCanvas() {
     const calculatedPeriod = getAutoPeriod(calculatedStart);
     const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
 
+    // Rétro-compatibilité : on conserve aussi carte_historique_url de la 1ère carte
+    const premiereCarte = formData.cartesHistoriques?.[0];
+
     const payload = {
       titre: formData.titre.trim(),
       date_debut: calculatedStart,
@@ -663,10 +675,11 @@ export default function TimelineCanvas() {
       couleur: formData.couleur || null,
       importance: Number(formData.importance),
       description: formData.description.trim() || null,
-      carte_historique_url: formData.carteHistoriqueUrl.trim() || null,
-      carte_legende: formData.carteLegende.trim() || null,
-      latitude: formData.latitude !== '' ? parseFloat(formData.latitude) : null,
-      longitude: formData.longitude !== '' ? parseFloat(formData.longitude) : null
+      latitude: formData.latitude !== '' ? Number(formData.latitude) : null,
+      longitude: formData.longitude !== '' ? Number(formData.longitude) : null,
+      cartes_historiques: formData.cartesHistoriques,
+      carte_historique_url: premiereCarte?.url || null,
+      carte_legende: premiereCarte?.titre || null
     };
 
     if (editingEventId) {
@@ -684,9 +697,6 @@ export default function TimelineCanvas() {
         const updated = data[0];
         setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
         setSelectedEvent(updated);
-        if (splitEvent && splitEvent.id === updated.id) {
-          setSplitEvent(updated);
-        }
         setIsModalOpen(false);
       }
     } else {
@@ -734,48 +744,39 @@ export default function TimelineCanvas() {
   const selectAllCustom = () => setCustomSelectedIds(new Set(events.map(e => e.id)));
   const deselectAllCustom = () => setCustomSelectedIds(new Set());
 
-  const handleDeepDive = (evt) => {
-    setSplitEvent(evt);
-    setIsSplitOpen(true);
-    setSelectedEvent(null);
-  };
-
-  const handleCloseSplit = () => {
-    setIsSplitOpen(false);
-    setSplitEvent(null);
-  };
+  const searchedEvents = events.filter(e =>
+    e.titre.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#020617', overflow: 'hidden', userSelect: 'none' }}>
       
-      {/* Knowledge Hub */}
+      {/* 1. Volet supérieur (Knowledge Hub / Split View) */}
       <KnowledgeSplitView
-        event={splitEvent}
-        isOpen={isSplitOpen}
-        onClose={handleCloseSplit}
+        isOpen={isSplitViewOpen}
+        onClose={() => setIsSplitViewOpen(false)}
+        event={selectedEvent}
       />
 
-      {/* Barre d'outils */}
-      <div
-        style={{
-          position: 'absolute',
-          top: isSplitOpen ? 'calc(50vh + 12px)' : 14,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 20,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          backgroundColor: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(51, 65, 85, 0.6)',
-          borderRadius: 30,
-          boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-          color: '#f8fafc',
-          transition: 'top 0.2s ease'
-        }}
-      >
+      {/* 2. Barre d'outils flottante */}
+      <div style={{
+        position: 'absolute',
+        top: isSplitViewOpen ? 'calc(50% + 12px)' : 14,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 12px',
+        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(51, 65, 85, 0.6)',
+        borderRadius: 30,
+        boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+        color: '#f8fafc',
+        transition: 'top 0.25s ease'
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 8, borderRight: '1px solid #334155' }}>
           <span style={{ fontSize: 14 }}>⏳</span>
           <span style={{ fontWeight: 'bold', fontSize: 12, color: '#38bdf8' }}>Chronos</span>
@@ -822,10 +823,30 @@ export default function TimelineCanvas() {
           <span>Ajouter</span>
         </button>
 
-        {(selectedEvent || splitEvent) && (
+        {selectedEvent && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid #334155' }}>
             <button
-              onClick={() => handleOpenEditModal(selectedEvent || splitEvent)}
+              onClick={() => setIsSplitViewOpen(!isSplitViewOpen)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '6px 12px',
+                backgroundColor: isSplitViewOpen ? '#38bdf8' : 'rgba(56, 189, 248, 0.2)',
+                color: isSplitViewOpen ? '#020617' : '#38bdf8',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                borderRadius: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <span>🔍</span>
+              <span>{isSplitViewOpen ? 'Fermer le volet' : 'Approfondir'}</span>
+            </button>
+
+            <button
+              onClick={() => handleOpenEditModal(selectedEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -845,7 +866,7 @@ export default function TimelineCanvas() {
             </button>
 
             <button
-              onClick={() => handleDeleteEvent(selectedEvent || splitEvent)}
+              onClick={() => handleDeleteEvent(selectedEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -873,7 +894,7 @@ export default function TimelineCanvas() {
         </div>
       </div>
 
-      {/* Volet Filtres */}
+      {/* 3. Volet latéral de filtres */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}
@@ -881,10 +902,11 @@ export default function TimelineCanvas() {
         setFilterMode={setFilterMode}
         availableTags={availableTags}
         selectedTags={selectedTags}
-        onToggleFilterTag={toggleFilterTag}
+        onToggleTag={toggleFilterTag}
         onSelectAllTags={() => setSelectedTags(availableTags)}
         onDeselectAllTags={() => setSelectedTags([])}
         events={events}
+        searchedEvents={searchedEvents}
         customSelectedIds={customSelectedIds}
         onToggleCustomEvent={toggleCustomEvent}
         onSelectAllCustom={selectAllCustom}
@@ -893,17 +915,17 @@ export default function TimelineCanvas() {
         setSearchQuery={setSearchQuery}
       />
 
-      {/* Pop-up d'aperçu */}
-      {!isSplitOpen && (
-        <EventPopup
-          event={selectedEvent}
-          position={popupPos}
-          onClose={() => setSelectedEvent(null)}
-          onDeepDive={handleDeepDive}
-        />
-      )}
+      {/* 4. Pop-up informative au clic sur un événement */}
+      <EventPopup
+        event={selectedEvent}
+        position={popupPos}
+        onClose={() => setSelectedEvent(null)}
+        onEdit={handleOpenEditModal}
+        onDelete={handleDeleteEvent}
+        onDeepDive={() => setIsSplitViewOpen(true)}
+      />
 
-      {/* Modale d'ajout / modification */}
+      {/* 5. Modale de saisie / modification */}
       <EventModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -922,23 +944,31 @@ export default function TimelineCanvas() {
         onToggleTag={toggleTagInForm}
       />
 
-      {/* Frise Canvas principale */}
-      <div
-        style={{
-          position: 'absolute',
-          top: isSplitOpen ? '50vh' : 0,
-          left: 0,
-          width: '100%',
-          height: isSplitOpen ? 'calc(50vh - 70px)' : 'calc(100% - 70px)',
-          cursor: 'grab',
-          transition: 'top 0.2s ease, height 0.2s ease'
-        }}
-      >
+      {/* 6. Zone Canvas (Frise chronologique dynamique) */}
+      <div style={{
+        position: 'absolute',
+        bottom: 70,
+        left: 0,
+        width: '100%',
+        height: isSplitViewOpen ? 'calc(50% - 70px)' : 'calc(100% - 70px)',
+        cursor: 'grab',
+        transition: 'height 0.25s ease'
+      }}>
         <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       </div>
 
-      {/* Minimap basse */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: 70, backgroundColor: '#020617', borderTop: '1px solid #1e293b', cursor: 'pointer', zIndex: 15 }}>
+      {/* 7. Minimap basse */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        width: '100%',
+        height: 70,
+        backgroundColor: '#020617',
+        borderTop: '1px solid #1e293b',
+        cursor: 'pointer',
+        zIndex: 15
+      }}>
         <canvas ref={canvasMiniRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       </div>
 
