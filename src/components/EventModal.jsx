@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { COLOR_PRESETS } from '../utils/timelineMath.js';
 import WikimediaPickerModal from './WikimediaPickerModal.jsx';
+import CityPicker from './CityPicker.jsx';
 
 export default function EventModal({
   isOpen,
@@ -23,7 +24,7 @@ export default function EventModal({
 
   if (!isOpen) return null;
 
-  // Liste des cartes rattachées (tableau d'objets)
+  // Liste des cartes rattachées
   const cartes = Array.isArray(formData.cartesHistoriques) ? formData.cartesHistoriques : [];
 
   const handleAddCard = (nouvelleCarte) => {
@@ -68,7 +69,7 @@ export default function EventModal({
             boxShadow: '0 15px 35px rgba(0,0,0,0.7)'
           }}
         >
-          {/* En-tête de la modale */}
+          {/* En-tête */}
           <div
             style={{
               display: 'flex',
@@ -280,7 +281,22 @@ export default function EventModal({
               </div>
             )}
 
-            {/* SECTION CARTES HISTORIQUES MULTIPLES */}
+            {/* SECTION 1 : RECHERCHE DE VILLE MONDIALE */}
+            <div style={{ padding: 12, backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid #1e293b', borderRadius: 8 }}>
+              <CityPicker
+                latitude={formData.latitude}
+                longitude={formData.longitude}
+                onLocationSelect={({ latitude, longitude }) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    latitude,
+                    longitude
+                  }));
+                }}
+              />
+            </div>
+
+            {/* SECTION 2 : CARTES HISTORIQUES MULTIPLES */}
             <div style={{ padding: 12, backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid #1e293b', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 11, fontWeight: 'bold', color: '#38bdf8' }}>
@@ -291,7 +307,6 @@ export default function EventModal({
                 </span>
               </div>
 
-              {/* Boutons d'ajout par source */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
                   type="button"
@@ -315,7 +330,6 @@ export default function EventModal({
                 </button>
               </div>
 
-              {/* Liste des cartes associées */}
               {cartes.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                   {cartes.map((carte, idx) => (
@@ -350,52 +364,6 @@ export default function EventModal({
                   ))}
                 </div>
               )}
-            </div>
-
-            {/* Repères modernes (Optionnels) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: 3, color: '#cbd5e1', fontSize: 11 }}>Latitude moderne</label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="Ex: 41.0082"
-                  value={formData.latitude || ''}
-                  onChange={e => setFormData({ ...formData, latitude: e.target.value })}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    backgroundColor: '#020617',
-                    border: '1px solid #334155',
-                    borderRadius: 6,
-                    padding: '6px 8px',
-                    color: '#ffffff',
-                    fontSize: 11,
-                    outline: 'none'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: 3, color: '#cbd5e1', fontSize: 11 }}>Longitude moderne</label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="Ex: 28.9784"
-                  value={formData.longitude || ''}
-                  onChange={e => setFormData({ ...formData, longitude: e.target.value })}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    backgroundColor: '#020617',
-                    border: '1px solid #334155',
-                    borderRadius: 6,
-                    padding: '6px 8px',
-                    color: '#ffffff',
-                    fontSize: 11,
-                    outline: 'none'
-                  }}
-                />
-              </div>
             </div>
 
             {/* Nuancier de couleur */}
