@@ -1,4 +1,3 @@
-@import 'leaflet/dist/leaflet.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,6 +8,36 @@ html, body, #root {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #020617;
+  user-select: none;
+}
+
+/* 1. THÈME LINEAR : Fond nuit abyssale avec lueur violette haute */
+body.theme-linear {
+  background-color: #06070a;
   color: #f8fafc;
+  background-image: 
+    radial-gradient(circle at 50% 15%, rgba(99, 102, 241, 0.14) 0%, transparent 65%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 32px 32px, 32px 32px;
+  background-attachment: fixed;
+}
+
+/* 2. THÈME CLAIR : Fort dégradé temporel de gauche à droite */
+body.theme-gallery {
+  background-color: #e5dfd5;
+  color: #0f172a;
+  background-image: 
+    /* Dégradé marqué : Ardoise minérale foncée (passé lointain) -> Albâtre lumineux (époque contemporaine) */
+    linear-gradient(to right, #8c8273 0%, #b8af9f 25%, #ded8cc 55%, #f5f3ec 85%, #ffffff 100%),
+    /* Micro-grain de fresque */
+    repeating-radial-gradient(circle at 50% 50%, transparent 0, rgba(20, 15, 10, 0.03) 1px, transparent 3px);
+  background-size: 100% 100%, 4px 4px;
+  background-attachment: fixed;
+}
+
+/* 3. THÈME DALTONIEN */
+body.theme-accessible {
+  background-color: #000000;
+  color: #ffffff;
 }

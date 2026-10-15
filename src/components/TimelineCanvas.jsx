@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { THEMES } from '../utils/themeConfig.js';
 import { supabase } from '../supabase.js';
 import {
   PERIOD_SEGMENTS,
@@ -26,6 +27,14 @@ export default function TimelineCanvas() {
   const canvasMiniRef = useRef(null);
 
   const [viewRange, setViewRange] = useState({ min: -1000, max: 2026 });
+  const [currentTheme, setCurrentTheme] = useState(() => {
+  return localStorage.getItem('chronos_theme') || 'dark';
+	});
+
+	useEffect(() => {
+	  document.body.className = THEMES[currentTheme]?.bgClass || 'theme-dark';
+	  localStorage.setItem('chronos_theme', currentTheme);
+	}, [currentTheme]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState([]);
@@ -107,6 +116,7 @@ export default function TimelineCanvas() {
 
   // Dessin de la scène (Canvas)
   const drawScene = () => {
+	const th = THEMES[currentTheme]?.canvas || THEMES.dark.canvas;
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
     if (!cMain || !cMini) return;
@@ -138,13 +148,31 @@ export default function TimelineCanvas() {
     const visibleBarX2 = Math.min(w + 50, xEnd);
     const barWidth = Math.max(0, visibleBarX2 - visibleBarX1);
 
-    ctx.fillStyle = '#090d16';
-    ctx.fillRect(visibleBarX1, barTop, barWidth, BAR_HEIGHT);
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(visibleBarX1, barTop, barWidth, BAR_HEIGHT);
+    ctx.save();
+    // 1. Double volume / ombre portée douce
+    ctx.shadowColor = currentTheme === 'light' ? 'rgba(74, 50, 30, 0.28)' : 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 6;
+    ctx.shadowOffsetX = 0;
 
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+    // 2. Corps moulé aux bords arrondis
+    ctx.fillStyle = th.axisBg;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(visibleBarX1, barTop, barWidth, BAR_HEIGHT, 14);
+    } else {
+      ctx.rect(visibleBarX1, barTop, barWidth, BAR_HEIGHT);
+    }
+    ctx.fill();
+
+    // 3. Liseré supérieur doux
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = currentTheme === 'light' ? 'rgba(255, 255, 255, 0.5)' : th.axisBorder;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.strokeStyle = th.axisLine;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(visibleBarX1, barY);
@@ -153,14 +181,14 @@ export default function TimelineCanvas() {
 
     const interval = getTickInterval(span);
     const firstTick = Math.ceil(vMin / interval) * interval;
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = th.tickText;
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
 
     for (let t = firstTick; t <= vMax; t += interval) {
       if (t < GLOBAL_MIN || t > GLOBAL_MAX) continue;
       const tx = yearToX(t);
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.35)';
+      ctx.strokeStyle = th.ticks;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tx, barBottom);
@@ -262,7 +290,7 @@ export default function TimelineCanvas() {
     });
 
     // Dessin de la minimap
-    mctx.fillStyle = '#020617';
+    mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
 
     const usableW = mw - 2 * MINI_PAD;
@@ -305,7 +333,7 @@ export default function TimelineCanvas() {
 
     mctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
     mctx.fillRect(left, 4, bWidth, 42);
-    mctx.strokeStyle = '#38bdf8';
+    mctx.strokeStyle = th.viewportBorder;
     mctx.lineWidth = 2;
     mctx.strokeRect(left, 4, bWidth, 42);
 
@@ -365,8 +393,8 @@ export default function TimelineCanvas() {
   }, [isSplitViewOpen]);
 
   useEffect(() => {
-    drawScene();
-  }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, isSplitViewOpen]);
+  drawScene();
+	}, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, isSplitViewOpen, currentTheme]);
 
   // Gestion des interactions de navigation (drag & zoom)
   useEffect(() => {
@@ -749,7 +777,7 @@ export default function TimelineCanvas() {
   );
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#020617', overflow: 'hidden', userSelect: 'none' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none' }}>
       
       {/* 1. Volet supérieur (Knowledge Hub / Split View) */}
       <KnowledgeSplitView
@@ -801,6 +829,35 @@ export default function TimelineCanvas() {
           <span>🏷️</span>
           <span>Filtres</span>
         </button>
+		{/* Sélecteur de thèmes */}
+<div style={{
+  display: 'flex',
+  gap: 3,
+  backgroundColor: 'rgba(2, 6, 23, 0.4)',
+  borderRadius: 20,
+  padding: 2,
+  border: '1px solid rgba(255, 255, 255, 0.08)'
+}}>
+  {Object.values(THEMES).map(t => (
+    <button
+      key={t.id}
+      type="button"
+      onClick={() => setCurrentTheme(t.id)}
+      title={`Thème : ${t.name}`}
+      style={{
+        padding: '4px 8px',
+        borderRadius: 16,
+        border: 'none',
+        cursor: 'pointer',
+        fontSize: 12,
+        backgroundColor: currentTheme === t.id ? '#0284c7' : 'transparent',
+        transition: 'background-color 0.15s ease'
+      }}
+    >
+      {t.icon}
+    </button>
+  ))}
+</div>
 
         <button
           onClick={handleOpenCreateModal}

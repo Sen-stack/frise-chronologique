@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatYear, getItemStyle } from '../utils/timelineMath.js';
 
@@ -14,12 +15,23 @@ const defaultIcon = L.icon({
   shadowSize: [41, 41]
 });
 
+// Hook utilitaire pour forcer Leaflet à recalculer sa taille d'affichage sans tuiles cassées
+function MapResizer() {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [map]);
+  return null;
+}
+
 export default function KnowledgeSplitView({ event, isOpen, onClose }) {
   if (!isOpen || !event) return null;
 
   const style = getItemStyle(event);
 
-  // Récupération de l'ensemble des cartes (avec rétro-compatibilité)
   const cartes = Array.isArray(event.cartes_historiques) && event.cartes_historiques.length > 0
     ? event.cartes_historiques
     : (event.carte_historique_url
@@ -28,11 +40,8 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
 
   const hasArchiveMaps = cartes.length > 0;
   const [activeTab, setActiveTab] = useState(hasArchiveMaps ? 'archives' : 'moderne');
-  
-  // Carte sélectionnée pour le mode zoom / Lightbox plein écran
   const [previewCard, setPreviewCard] = useState(null);
 
-  // Fermer la visionneuse avec la touche Échap
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') setPreviewCard(null);
@@ -41,10 +50,9 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Coordonnées pour Leaflet
-  const hasCoords = event.latitude !== null && event.latitude !== undefined && event.longitude !== null && event.longitude !== undefined;
-  const position = hasCoords ? [event.latitude, event.longitude] : [41.9028, 12.4964];
-  const zoom = event.zoom_niveau || 6;
+  const hasCoords = event.latitude !== null && event.latitude !== undefined && event.longitude !== null && event.longitude !== undefined && !isNaN(event.latitude);
+  const position = hasCoords ? [Number(event.latitude), Number(event.longitude)] : [41.9028, 12.4964];
+  const zoom = Number(event.zoom_niveau) || 6;
 
   return (
     <>
@@ -73,7 +81,8 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             alignItems: 'center',
             padding: '8px 18px',
             backgroundColor: '#0f172a',
-            borderBottom: '1px solid #1e293b'
+            borderBottom: '1px solid #1e293b',
+            flexShrink: 0
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -117,13 +126,13 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
           </button>
         </div>
 
-        {/* 2. Corps scindé (Gauche : Cartes / Droite : Connaissances) */}
-        <div style={{ display: 'flex', flex: 1, height: 'calc(100% - 44px)' }}>
+        {/* 2. Corps scindé (Gauche 58% / Droite 42%) */}
+        <div style={{ display: 'flex', flex: 1, width: '100%', overflow: 'hidden' }}>
           
-          {/* COLONNE GAUCHE */}
-          <div style={{ flex: '0 0 58%', height: '100%', display: 'flex', flexDirection: 'column', borderRight: '1px solid #1e293b', backgroundColor: '#020617' }}>
+          {/* COLONNE GAUCHE (CARTES & ARCHIVES) */}
+          <div style={{ width: '58%', height: '100%', display: 'flex', flexDirection: 'column', borderRight: '1px solid #1e293b', backgroundColor: '#020617', position: 'relative', overflow: 'hidden' }}>
             
-            {/* Onglets de sélection de vue */}
+            {/* Onglets */}
             <div
               style={{
                 display: 'flex',
@@ -131,7 +140,8 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                 justifyContent: 'space-between',
                 padding: '6px 14px',
                 backgroundColor: '#0a0f1d',
-                borderBottom: '1px solid #1e293b'
+                borderBottom: '1px solid #1e293b',
+                flexShrink: 0
               }}
             >
               <div style={{ display: 'flex', gap: 6 }}>
@@ -179,18 +189,10 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               )}
             </div>
 
-            {/* VUE 1 : GRILLE PINTEREST (MASONRY) OU CARTE UNIQUE */}
+            {/* VUE ARCHIVES PINTEREST */}
             {activeTab === 'archives' && hasArchiveMaps && (
-              <div
-                style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: 14,
-                  backgroundColor: '#050811'
-                }}
-              >
+              <div style={{ flex: 1, overflowY: 'auto', padding: 14, backgroundColor: '#050811' }}>
                 {cartes.length === 1 ? (
-                  /* Affichage pleine page si une seule carte */
                   <div
                     onClick={() => setPreviewCard(cartes[0])}
                     style={{
@@ -199,8 +201,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                       flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      cursor: 'zoom-in',
-                      position: 'relative'
+                      cursor: 'zoom-in'
                     }}
                   >
                     <img
@@ -220,13 +221,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                     </div>
                   </div>
                 ) : (
-                  /* Grille dynamique Pinterest (2 colonnes d'imbrication naturelle) */
-                  <div
-                    style={{
-                      columnCount: 2,
-                      columnGap: 14
-                    }}
-                  >
+                  <div style={{ columnCount: 2, columnGap: 14 }}>
                     {cartes.map((carte, idx) => (
                       <div
                         key={idx}
@@ -255,11 +250,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                           src={carte.url}
                           alt={carte.titre}
                           referrerPolicy="no-referrer"
-                          style={{
-                            width: '100%',
-                            display: 'block',
-                            objectFit: 'cover'
-                          }}
+                          style={{ width: '100%', display: 'block', objectFit: 'cover' }}
                         />
                         <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                           <span style={{ fontSize: 9, color: '#38bdf8', fontWeight: 'bold', textTransform: 'uppercase' }}>
@@ -276,20 +267,19 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               </div>
             )}
 
-            {/* VUE 2 : CARTE MODERNE LEAFLET */}
+            {/* VUE LEAFLET MODERNE (Conteneur strictement calibré avec Invalidator) */}
             {activeTab === 'moderne' && (
-              <div style={{ flex: 1, position: 'relative' }}>
+              <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
                 <MapContainer
-                  key={`${event.id}-${position[0]}-${position[1]}`}
                   center={position}
                   zoom={zoom}
-                  style={{ width: '100%', height: '100%', background: '#020617' }}
+                  style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
                 >
+                  <MapResizer />
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
-
                   {hasCoords && (
                     <Marker position={position} icon={defaultIcon}>
                       <Popup>
@@ -307,12 +297,15 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
           {/* COLONNE DROITE : CONNAISSANCES & RÉFÉRENCES */}
           <div
             style={{
-              flex: '0 0 42%',
+              width: '42%',
+              height: '100%',
               padding: 18,
               overflowY: 'auto',
+              boxSizing: 'border-box',
               display: 'flex',
               flexDirection: 'column',
-              gap: 12
+              gap: 12,
+              backgroundColor: '#090d16'
             }}
           >
             <div>
@@ -353,14 +346,14 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                 color: '#64748b'
               }}
             >
-              📚 Espace réservé pour les lectures, vidéos, citations et liens d'études.
+              📚 Espace réservé pour les lectures, vidéos, citations et liens d'études (Bento Grid).
             </div>
           </div>
 
         </div>
       </div>
 
-      {/* 3. LIGHTBOX PLEIN ÉCRAN AU CLIC SUR UNE CARTE */}
+      {/* Lightbox plein écran */}
       {previewCard && (
         <div
           onClick={() => setPreviewCard(null)}
@@ -401,7 +394,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             src={previewCard.url}
             alt={previewCard.titre}
             referrerPolicy="no-referrer"
-            onClick={(e) => e.stopPropagation()} // Permet de ne pas fermer si on clique sur l'image elle-même
+            onClick={(e) => e.stopPropagation()}
             style={{
               maxWidth: '92vw',
               maxHeight: '84vh',
