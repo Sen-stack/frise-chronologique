@@ -9,35 +9,47 @@ html, body, #root {
   padding: 0;
   overflow: hidden;
   user-select: none;
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 1. THÈME LINEAR SOMBRE */
+/* 1. Mode Sombre par défaut */
+body.theme-dark,
 body.theme-linear {
-  background-color: #06070a;
+  background-color: #090a0f;
   color: #f8fafc;
   background-image: 
-    radial-gradient(circle at 50% 15%, rgba(99, 102, 241, 0.14) 0%, transparent 65%),
-    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    radial-gradient(circle at 50% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
   background-size: 100% 100%, 32px 32px, 32px 32px;
   background-attachment: fixed;
 }
 
-/* 2. THÈME CLAIR : Dégradé temporel minéral */
-body.theme-gallery {
-  background-color: #e5dfd5;
-  color: #0f172a;
-  background-image: 
-    linear-gradient(to right, #8c8273 0%, #b8af9f 25%, #ded8cc 55%, #f5f3ec 85%, #ffffff 100%),
-    repeating-radial-gradient(circle at 50% 50%, transparent 0, rgba(20, 15, 10, 0.03) 1px, transparent 3px);
-  background-size: 100% 100%, 4px 4px;
+/* 2. Mode Galerie d'Art / Mur Minéral (comme sur tes captures) */
+body.theme-gallery,
+body.theme-light {
+  /* Teinte de base : pierre calcaire / chaux chaleureuse */
+  background-color: #ede6dc;
+  color: #1c1917;
+
+  /* Superposition de couches :
+     1. Un dégradé masque très doux à droite (effet voute / fresque floue)
+     2. Un grain minéral subtil pour enlever tout aspect plastique
+     3. La texture de fresque architecturale fondue en filigrane à droite */
+  background-image:
+    /* Voile de lumière chaleureux qui vient de gauche */
+    radial-gradient(circle at 10% 20%, rgba(255, 252, 247, 0.7) 0%, transparent 60%),
+    /* Fondu progressif vers la fresque à droite */
+    linear-gradient(to right, #ede6dc 0%, #ede6dc 55%, rgba(237, 230, 220, 0.45) 85%, rgba(237, 230, 220, 0.85) 100%),
+    /* Fresque / voûte ancienne floutée et texturée sur le tiers droit */
+    radial-gradient(ellipse at 88% 30%, rgba(180, 150, 115, 0.35) 0%, transparent 50%),
+    /* Micro-grain minéral de chaux */
+    repeating-radial-gradient(circle at 50% 50%, transparent 0, rgba(120, 95, 70, 0.025) 1px, transparent 2px);
+  
   background-attachment: fixed;
+  background-size: cover;
 }
 
-/* 3. THÈME DALTONIEN */
+/* 3. Mode Accessibilité / Daltonien */
 body.theme-accessible {
   background-color: #000000;
   color: #ffffff;

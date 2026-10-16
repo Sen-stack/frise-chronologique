@@ -3,9 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../supabase.js';
-import { formatYear, getItemStyle } from '../utils/timelineMath.js';
+import WikimediaPickerModal from './WikimediaPickerModal.jsx';
 
-// Icône Leaflet
 const defaultIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -16,13 +15,12 @@ const defaultIcon = L.icon({
   shadowSize: [41, 41]
 });
 
-// Forcer Leaflet à recalculer sa taille d'affichage
 function MapResizer() {
   const map = useMap();
   useEffect(() => {
     const timer = setTimeout(() => {
       map.invalidateSize();
-    }, 120);
+    }, 150);
     return () => clearTimeout(timer);
   }, [map]);
   return null;
@@ -31,97 +29,137 @@ function MapResizer() {
 export default function KnowledgeSplitView({ event, isOpen, onClose }) {
   if (!isOpen || !event) return null;
 
-  const style = getItemStyle(event);
-
-  const cartes = Array.isArray(event.cartes_historiques) && event.cartes_historiques.length > 0
-    ? event.cartes_historiques
-    : (event.carte_historique_url
-        ? [{ source: 'archive', titre: event.carte_legende || 'Carte historique', url: event.carte_historique_url }]
-        : []);
-
-  const hasArchiveMaps = cartes.length > 0;
-  const [activeTab, setActiveTab] = useState(hasArchiveMaps ? 'archives' : 'moderne');
+  // Données éditables
+  const [description, setDescription] = useState('');
+  const [blocs, setBlocs] = useState([]);
+  const [cartes, setCartes] = useState([]);
+  const [activeTab, setActiveTab] = useState('archives');
   const [previewCard, setPreviewCard] = useState(null);
-
-  // État local des tuiles Bento (chargé depuis la base ou initialisé vide)
-  const [bentoItems, setBentoItems] = useState(() => {
-    return Array.isArray(event.references_bento) ? event.references_bento : [];
-  });
-
-  // Mettre à jour si l'événement sélectionné change
-  useEffect(() => {
-    setBentoItems(Array.isArray(event.references_bento) ? event.references_bento : []);
-  }, [event]);
-
-  // Formulaire d'ajout rapide d'une tuile Bento
-  const [isAdding, setIsAdding] = useState(false);
-  const [itemType, setItemType] = useState('text'); // 'text', 'link', 'quote', 'book'
-  const [itemTitle, setItemTitle] = useState('');
-  const [itemContent, setItemContent] = useState('');
-  const [itemUrl, setItemUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
 
-  // Sauvegarder dans Supabase
-  const handleSaveItem = async (e) => {
-    e.preventDefault();
-    if (!itemContent.trim() && !itemTitle.trim() && !itemUrl.trim()) return;
+  // Modale Wikimedia et saisie libre de lien
+  const [isWikiPickerOpen, setIsWikiPickerOpen] = useState(false);
+  const [isAddingDirectUrl, setIsAddingDirectUrl] = useState(false);
+  const [directCardUrl, setDirectCardUrl] = useState('');
+  const [directCardTitre, setDirectCardTitre] = useState('');
 
-    const newItem = {
-      id: Date.now().toString(),
-      type: itemType,
-      title: itemTitle.trim() || null,
-      content: itemContent.trim() || null,
-      url: itemUrl.trim() || null,
-      createdAt: new Date().toISOString()
-    };
-
-    const updatedList = [...bentoItems, newItem];
-    setIsSaving(true);
-
-    const { error } = await supabase
-      .from('evenements')
-      .update({ references_bento: updatedList })
-      .eq('id', event.id);
-
-    setIsSaving(false);
-
-    if (!error) {
-      setBentoItems(updatedList);
-      event.references_bento = updatedList; // Mise à jour locale en direct
-      setIsAdding(false);
-      setItemTitle('');
-      setItemContent('');
-      setItemUrl('');
-    } else {
-      alert("Erreur d'enregistrement : " + error.message);
-    }
-  };
-
-  // Supprimer une tuile
-  const handleDeleteItem = async (itemId) => {
-    const updatedList = bentoItems.filter(it => it.id !== itemId);
-    const { error } = await supabase
-      .from('evenements')
-      .update({ references_bento: updatedList })
-      .eq('id', event.id);
-
-    if (!error) {
-      setBentoItems(updatedList);
-      event.references_bento = updatedList;
-    }
-  };
+  // Blocs dynamiques libres
+  const [newBlockType, setNewBlockType] = useState(null); // 'text' ou 'link'
+  const [newBlockContent, setNewBlockContent] = useState({ titre: '', url: '', texte: '' });
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') setPreviewCard(null);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    if (event) {
+      setDescription(event.description || '');
+
+      const bentoData = Array.isArray(event.references_bento) ? event.references_bento : [];
+      setBlocs(bentoData);
+
+      let cartesList = [];
+      if (Array.isArray(event.cartes_historiques) && event.cartes_historiques.length > 0) {
+        cartesList = event.cartes_historiques;
+      } else if (event.carte_historique_url) {
+        cartesList = [{ source: 'archive', titre: event.carte_legende || 'Document historique', url: event.carte_historique_url }];
+      }
+      setCartes(cartesList);
+      setActiveTab(cartesList.length > 0 ? 'archives' : 'moderne');
+      setSaveMessage('');
+    }
+  }, [event]);
 
   const hasCoords = event.latitude !== null && event.latitude !== undefined && event.longitude !== null && event.longitude !== undefined && !isNaN(event.latitude);
   const position = hasCoords ? [Number(event.latitude), Number(event.longitude)] : [41.9028, 12.4964];
   const zoom = Number(event.zoom_niveau) || 6;
+
+  const anneeAffichee = event.date_debut < 0
+    ? `${Math.abs(event.date_debut)} BCE`
+    : `${event.date_debut} CE`;
+
+  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description) => {
+    setIsSaving(true);
+    setSaveMessage('');
+
+    const payload = {
+      description: updatedDesc.trim() || null,
+      references_bento: updatedBlocs,
+      cartes_historiques: updatedCartes,
+      carte_historique_url: updatedCartes[0]?.url || null,
+      carte_legende: updatedCartes[0]?.titre || null
+    };
+
+    const { error } = await supabase
+      .from('evenements')
+      .update(payload)
+      .eq('id', event.id);
+
+    setIsSaving(false);
+    if (error) {
+      setSaveMessage('Erreur');
+    } else {
+      setSaveMessage('Enregistré ✓');
+      event.description = payload.description;
+      event.references_bento = payload.references_bento;
+      event.cartes_historiques = payload.cartes_historiques;
+      event.carte_historique_url = payload.carte_historique_url;
+      event.carte_legende = payload.carte_legende;
+      setTimeout(() => setSaveMessage(''), 2000);
+    }
+  };
+
+  // Réception de l'image sélectionnée dans la modale Wikimedia
+  const handleSelectWikimedia = (nouvelleCarte) => {
+    const nextList = [...cartes, nouvelleCarte];
+    setCartes(nextList);
+    setActiveTab('archives');
+    handleSave(blocs, nextList, description);
+  };
+
+  // Ajout par URL manuelle
+  const handleAddDirectUrlSubmit = (e) => {
+    e.preventDefault();
+    if (!directCardUrl.trim()) return;
+    const nouvelle = {
+      source: 'web',
+      titre: directCardTitre.trim() || 'Document d’époque',
+      url: directCardUrl.trim()
+    };
+    const nextList = [...cartes, nouvelle];
+    setCartes(nextList);
+    setDirectCardUrl('');
+    setDirectCardTitre('');
+    setIsAddingDirectUrl(false);
+    setActiveTab('archives');
+    handleSave(blocs, nextList, description);
+  };
+
+  const handleRemoveCard = (index) => {
+    const nextList = cartes.filter((_, i) => i !== index);
+    setCartes(nextList);
+    handleSave(blocs, nextList, description);
+  };
+
+  // Ajout / Suppression de bloc libre
+  const handleAddBlockSubmit = (e) => {
+    e.preventDefault();
+    const nouveauBloc = {
+      id: Date.now(),
+      type: newBlockType,
+      titre: newBlockContent.titre.trim(),
+      url: newBlockContent.url.trim(),
+      texte: newBlockContent.texte.trim()
+    };
+    const nextBlocs = [...blocs, nouveauBloc];
+    setBlocs(nextBlocs);
+    setNewBlockType(null);
+    setNewBlockContent({ titre: '', url: '', texte: '' });
+    handleSave(nextBlocs, cartes, description);
+  };
+
+  const handleRemoveBlock = (blockId) => {
+    const nextBlocs = blocs.filter(b => b.id !== blockId);
+    setBlocs(nextBlocs);
+    handleSave(nextBlocs, cartes, description);
+  };
 
   return (
     <>
@@ -132,194 +170,325 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
           left: 0,
           width: '100vw',
           height: '50vh',
-          backgroundColor: '#8c8273',
-          borderBottom: '2px solid rgba(60, 45, 30, 0.35)',
+          backgroundColor: '#faf7f2',
+          borderBottom: '1px solid #e7ded0',
+          boxShadow: '0 12px 30px rgba(44, 34, 22, 0.08)',
           zIndex: 25,
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 12px 35px rgba(35, 25, 15, 0.35)',
           color: '#1c1917',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+          fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif"
         }}
       >
-        {/* 1. Barre d'en-tête */}
+        {/* En-tête */}
         <div
           style={{
+            padding: '12px 24px 8px 24px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '9px 18px',
-            backgroundColor: 'rgba(60, 48, 38, 0.92)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
-            flexShrink: 0,
-            color: '#fdfbf7'
+            flexShrink: 0
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span
-              style={{
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-                padding: '2px 8px',
-                borderRadius: 4,
-                backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                color: '#fde68a',
-                fontWeight: 'bold'
-              }}
-            >
-              {event.date_fin ? '⏳ Période' : '📍 Événement'}
-            </span>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 'bold', color: '#ffffff' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1c1917', letterSpacing: -0.2 }}>
               {event.titre}
-            </h2>
-            <span style={{ fontSize: 12, color: '#e2d9cc' }}>
-              ({formatYear(event.date_debut)}{event.date_fin ? ` ➔ ${formatYear(event.date_fin)}` : ''})
+            </h1>
+            <span style={{ fontSize: 12, color: '#b45309', fontWeight: 600 }}>
+              {anneeAffichee}
             </span>
+            {saveMessage && (
+              <span style={{ fontSize: 11, color: '#15803d', fontWeight: 600 }}>
+                {saveMessage}
+              </span>
+            )}
           </div>
 
-          <button
-            onClick={onClose}
-            title="Fermer le volet"
-            style={{
-              background: 'rgba(255, 255, 255, 0.12)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              color: '#ffffff',
-              borderRadius: 6,
-              padding: '4px 10px',
-              fontSize: 12,
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
-          >
-            ✕ Fermer le split
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => handleSave()}
+              disabled={isSaving}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 7,
+                border: 'none',
+                backgroundColor: '#b45309',
+                color: '#ffffff',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              {isSaving ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              title="Fermer le volet"
+              style={{
+                background: '#f2ece1',
+                border: '1px solid #e7ded0',
+                color: '#57534e',
+                borderRadius: 7,
+                width: 28,
+                height: 28,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 13,
+                cursor: 'pointer'
+              }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
-        {/* 2. Corps scindé */}
-        <div style={{ display: 'flex', flex: 1, width: '100%', overflow: 'hidden' }}>
-          
-          {/* COLONNE GAUCHE (CARTES) */}
-          <div style={{ width: '55%', height: '100%', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(60, 45, 30, 0.25)', backgroundColor: '#756c5e', position: 'relative', overflow: 'hidden' }}>
-            
+        {/* Corps : Gauche (Documents) / Droite (Blocs libres) */}
+        <div
+          style={{
+            flex: 1,
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
+            padding: '4px 24px 14px 24px',
+            overflow: 'hidden',
+            boxSizing: 'border-box'
+          }}
+        >
+          {/* COLONNE GAUCHE : DOCUMENTS D'ARCHIVES & CARTE */}
+          <div
+            style={{
+              height: '100%',
+              backgroundColor: '#f3ece0',
+              borderRadius: 12,
+              border: '1px solid #e7ded0',
+              overflow: 'hidden',
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            {/* Barre d'outils et onglets */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '6px 14px',
-                backgroundColor: 'rgba(45, 35, 25, 0.45)',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                padding: '8px 12px',
+                backgroundColor: 'rgba(250, 247, 242, 0.95)',
+                borderBottom: '1px solid #e7ded0',
+                zIndex: 10,
                 flexShrink: 0
               }}
             >
               <div style={{ display: 'flex', gap: 6 }}>
-                {hasArchiveMaps && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('archives')}
-                    style={{
-                      padding: '4px 12px',
-                      borderRadius: 6,
-                      border: 'none',
-                      fontSize: 11,
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      backgroundColor: activeTab === 'archives' ? '#1c1917' : 'rgba(255, 255, 255, 0.15)',
-                      color: '#ffffff'
-                    }}
-                  >
-                    🗺️ Archives & Cartes ({cartes.length})
-                  </button>
-                )}
-
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('archives')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: 'none',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    backgroundColor: activeTab === 'archives' ? '#ffffff' : 'transparent',
+                    color: activeTab === 'archives' ? '#1c1917' : '#78716c',
+                    boxShadow: activeTab === 'archives' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'
+                  }}
+                >
+                  Archives & Documents ({cartes.length})
+                </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('moderne')}
                   style={{
-                    padding: '4px 12px',
+                    padding: '4px 10px',
                     borderRadius: 6,
                     border: 'none',
                     fontSize: 11,
-                    fontWeight: 'bold',
+                    fontWeight: 600,
                     cursor: 'pointer',
-                    backgroundColor: activeTab === 'moderne' ? '#1c1917' : 'rgba(255, 255, 255, 0.15)',
-                    color: '#ffffff'
+                    backgroundColor: activeTab === 'moderne' ? '#ffffff' : 'transparent',
+                    color: activeTab === 'moderne' ? '#1c1917' : '#78716c',
+                    boxShadow: activeTab === 'moderne' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'
                   }}
                 >
-                  🌍 Localisation moderne
+                  Carte moderne
                 </button>
               </div>
 
               {activeTab === 'archives' && (
-                <span style={{ fontSize: 10, color: '#f3ede4' }}>
-                  Cliquez sur un document pour l'agrandir
-                </span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsWikiPickerOpen(true)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #0284c7',
+                      backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: '#0284c7',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🏛️ Chercher sur Wikimedia
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingDirectUrl(!isAddingDirectUrl)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: '#57534e',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {isAddingDirectUrl ? '✕' : '+ Lien URL'}
+                  </button>
+                </div>
               )}
             </div>
 
-            {/* VUE ARCHIVES */}
-            {activeTab === 'archives' && hasArchiveMaps && (
-              <div style={{ flex: 1, overflowY: 'auto', padding: 14, backgroundColor: 'rgba(35, 28, 22, 0.25)' }}>
-                {cartes.length === 1 ? (
-                  <div
-                    onClick={() => setPreviewCard(cartes[0])}
-                    style={{
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'zoom-in'
-                    }}
-                  >
+            {/* Formulaire optionnel d'ajout manuel par URL */}
+            {isAddingDirectUrl && (
+              <form
+                onSubmit={handleAddDirectUrlSubmit}
+                style={{
+                  padding: 8,
+                  backgroundColor: '#ffffff',
+                  borderBottom: '1px solid #e7ded0',
+                  display: 'flex',
+                  gap: 6,
+                  alignItems: 'center',
+                  zIndex: 10
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="Légende ou titre"
+                  value={directCardTitre}
+                  onChange={(e) => setDirectCardTitre(e.target.value)}
+                  style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid #d6cebf', fontSize: 11, outline: 'none' }}
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="URL directe de l'image"
+                  value={directCardUrl}
+                  onChange={(e) => setDirectCardUrl(e.target.value)}
+                  style={{ flex: 2, padding: '4px 8px', borderRadius: 6, border: '1px solid #d6cebf', fontSize: 11, outline: 'none' }}
+                />
+                <button
+                  type="submit"
+                  style={{ padding: '4px 10px', borderRadius: 6, border: 'none', backgroundColor: '#b45309', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Ajouter
+                </button>
+              </form>
+            )}
+
+            {/* VUE 1 : DOCUMENTS D'ARCHIVES EN GRILLE STYLE PINTEREST */}
+            {activeTab === 'archives' && (
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: 12,
+                  backgroundColor: '#f5eee3',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {cartes.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#78716c', fontSize: 12 }}>
+                    <span>Aucun document d'archive associé.</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsWikiPickerOpen(true)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        border: '1px solid #0284c7',
+                        backgroundColor: '#ffffff',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: '#0284c7',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🏛️ Ouvrir la recherche Wikimedia Commons
+                    </button>
+                  </div>
+                ) : cartes.length === 1 ? (
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                     <img
                       src={cartes[0].url}
                       alt={cartes[0].titre}
                       referrerPolicy="no-referrer"
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: '85%',
-                        objectFit: 'contain',
-                        borderRadius: 8,
-                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)'
-                      }}
+                      onClick={() => setPreviewCard(cartes[0])}
+                      style={{ maxWidth: '100%', maxHeight: '85%', objectFit: 'contain', borderRadius: 8, boxShadow: '0 4px 15px rgba(0,0,0,0.1)', cursor: 'zoom-in' }}
                     />
-                    <div style={{ marginTop: 8, fontSize: 11, color: '#fdfbf7', fontStyle: 'italic', textAlign: 'center' }}>
-                      {cartes[0].titre}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: '#57534e', fontStyle: 'italic' }}>
+                        {cartes[0].titre}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCard(0)}
+                        title="Supprimer cette carte"
+                        style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 12 }}
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
                 ) : (
-                  <div style={{ columnCount: 2, columnGap: 14 }}>
-                    {cartes.map((carte, idx) => (
+                  <div style={{ columnCount: 2, columnGap: 12 }}>
+                    {cartes.map((c, idx) => (
                       <div
                         key={idx}
-                        onClick={() => setPreviewCard(carte)}
                         style={{
                           breakInside: 'avoid',
-                          marginBottom: 14,
+                          marginBottom: 12,
                           borderRadius: 8,
                           overflow: 'hidden',
-                          backgroundColor: '#f5f3ec',
-                          border: '1px solid rgba(60, 45, 30, 0.2)',
-                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.2)',
-                          cursor: 'zoom-in',
-                          transition: 'transform 0.15s ease'
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e7ded0',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                          position: 'relative'
                         }}
                       >
                         <img
-                          src={carte.url}
-                          alt={carte.titre}
+                          src={c.url}
+                          alt={c.titre}
                           referrerPolicy="no-referrer"
-                          style={{ width: '100%', display: 'block', objectFit: 'cover' }}
+                          onClick={() => setPreviewCard(c)}
+                          style={{ width: '100%', display: 'block', cursor: 'zoom-in' }}
                         />
-                        <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ fontSize: 9, color: '#854d0e', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                            {carte.source || 'Archive'}
+                        <div style={{ padding: '6px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, color: '#44403c', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.titre}
                           </span>
-                          <span style={{ fontSize: 11, color: '#1c1917', lineHeight: 1.3, fontWeight: 500 }}>
-                            {carte.titre}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCard(idx)}
+                            title="Supprimer"
+                            style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 11 }}
+                          >
+                            ✕
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -328,9 +497,9 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               </div>
             )}
 
-            {/* VUE LEAFLET */}
+            {/* VUE 2 : CARTE MODERNE */}
             {activeTab === 'moderne' && (
-              <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
                 <MapContainer
                   center={position}
                   zoom={zoom}
@@ -344,9 +513,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                   {hasCoords && (
                     <Marker position={position} icon={defaultIcon}>
                       <Popup>
-                        <strong style={{ color: '#0f172a' }}>{event.titre}</strong>
-                        <br />
-                        <span style={{ fontSize: 11, color: '#475569' }}>{formatYear(event.date_debut)}</span>
+                        <strong>{event.titre}</strong>
                       </Popup>
                     </Marker>
                   )}
@@ -355,332 +522,232 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             )}
           </div>
 
-          {/* COLONNE DROITE : LE MUR BENTO MODULAIRE */}
+          {/* COLONNE DROITE : BLOCS LIBRES & CONTEXTE */}
           <div
             style={{
-              width: '45%',
               height: '100%',
-              padding: 14,
-              overflowY: 'auto',
-              boxSizing: 'border-box',
               display: 'flex',
               flexDirection: 'column',
               gap: 10,
-              backgroundColor: '#9a9082'
+              overflowY: 'auto'
             }}
           >
-            {/* Barre d'action supérieure du Bento */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-              <span style={{ fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.8, color: '#3d2616' }}>
-                Cabinet de recherche & Notes ({bentoItems.length + (event.description ? 1 : 0)})
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsAdding(!isAdding)}
+            {/* Contexte principal */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: 10,
+                border: '1px solid #e7ded0',
+                padding: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                flexShrink: 0
+              }}
+            >
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#57534e', textTransform: 'uppercase' }}>
+                Contexte & Description principale
+              </label>
+              <textarea
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Rédigez les détails du contexte historique..."
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  backgroundColor: '#1c1917',
-                  color: '#ffffff',
+                  width: '100%',
                   border: 'none',
-                  borderRadius: 16,
-                  padding: '4px 10px',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                  outline: 'none',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: '#1c1917',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
                 }}
-              >
-                <span>{isAdding ? '✕ Fermer' : '+ Ajouter'}</span>
-              </button>
+              />
             </div>
 
-            {/* Formulaire rétractable d'ajout au Bento */}
-            {isAdding && (
+            {/* Boutons d'ajout de blocs libres */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>
+                Blocs & Références ({blocs.length})
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => { setNewBlockType('text'); setNewBlockContent({ titre: '', url: '', texte: '' }); }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #d6cebf',
+                    backgroundColor: '#ffffff',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: '#44403c'
+                  }}
+                >
+                  ➕ Bloc texte
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setNewBlockType('link'); setNewBlockContent({ titre: '', url: '', texte: '' }); }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #d6cebf',
+                    backgroundColor: '#ffffff',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: '#44403c'
+                  }}
+                >
+                  ➕ Bloc lien
+                </button>
+              </div>
+            </div>
+
+            {/* Formulaire d'ajout de bloc */}
+            {newBlockType && (
               <form
-                onSubmit={handleSaveItem}
+                onSubmit={handleAddBlockSubmit}
                 style={{
-                  backgroundColor: '#f5efe4',
-                  border: '1px solid #dfd3bf',
-                  borderRadius: 12,
-                  padding: 12,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 10,
+                  border: '1px solid #b45309',
+                  padding: 10,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 8,
-                  boxShadow: '0 4px 12px rgba(40, 25, 10, 0.1)'
+                  gap: 6
                 }}
               >
-                {/* Choix du format */}
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[
-                    { id: 'text', label: '📝 Note libre' },
-                    { id: 'link', label: '🔗 Lien / Source' },
-                    { id: 'quote', label: '“ Citation' },
-                    { id: 'book', label: '📚 Ouvrage' }
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setItemType(t.id)}
-                      style={{
-                        flex: 1,
-                        padding: '4px 6px',
-                        borderRadius: 6,
-                        border: 'none',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        backgroundColor: itemType === t.id ? '#1c1917' : '#ebe4d8',
-                        color: itemType === t.id ? '#ffffff' : '#442b15'
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309' }}>
+                    {newBlockType === 'text' ? 'Nouveau bloc de texte' : 'Nouveau lien de recherche'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setNewBlockType(null)}
+                    style={{ border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', color: '#78716c' }}
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {/* Titre ou nom de source */}
                 <input
                   type="text"
-                  placeholder={itemType === 'link' ? "Nom du lien (ex: Article Le Monde, Musée...)" : (itemType === 'book' ? "Titre du livre & Auteur" : "Titre ou contexte (optionnel)")}
-                  value={itemTitle}
-                  onChange={e => setItemTitle(e.target.value)}
-                  style={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #d4c8b6',
-                    borderRadius: 6,
-                    padding: '6px 8px',
-                    fontSize: 11,
-                    outline: 'none',
-                    color: '#1c1917'
-                  }}
+                  required
+                  placeholder="Titre du bloc ou de la source"
+                  value={newBlockContent.titre}
+                  onChange={(e) => setNewBlockContent(prev => ({ ...prev, titre: e.target.value }))}
+                  style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #d6cebf', fontSize: 11, outline: 'none' }}
                 />
 
-                {/* URL si lien ou vidéo */}
-                {(itemType === 'link' || itemType === 'book') && (
+                {newBlockType === 'link' && (
                   <input
-                    type="url"
-                    placeholder="https://..."
-                    value={itemUrl}
-                    onChange={e => setItemUrl(e.target.value)}
-                    style={{
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #d4c8b6',
-                      borderRadius: 6,
-                      padding: '6px 8px',
-                      fontSize: 11,
-                      outline: 'none',
-                      color: '#1c1917'
-                    }}
+                    type="text"
+                    required
+                    placeholder="URL du lien (ex. https://...)"
+                    value={newBlockContent.url}
+                    onChange={(e) => setNewBlockContent(prev => ({ ...prev, url: e.target.value }))}
+                    style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #d6cebf', fontSize: 11, outline: 'none' }}
                   />
                 )}
 
-                {/* Contenu textuel / citation */}
                 <textarea
-                  rows={itemType === 'quote' ? 2 : 3}
-                  placeholder={itemType === 'quote' ? "Sentence, extrait de discours ou de texte ancien..." : "Votre note, observation ou synthèse..."}
-                  value={itemContent}
-                  onChange={e => setItemContent(e.target.value)}
-                  style={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #d4c8b6',
-                    borderRadius: 6,
-                    padding: '6px 8px',
-                    fontSize: 11,
-                    outline: 'none',
-                    color: '#1c1917',
-                    resize: 'none'
-                  }}
+                  rows={2}
+                  placeholder="Notes, extraits ou remarques..."
+                  value={newBlockContent.texte}
+                  onChange={(e) => setNewBlockContent(prev => ({ ...prev, texte: e.target.value }))}
+                  style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #d6cebf', fontSize: 11, outline: 'none', resize: 'vertical' }}
                 />
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
                   <button
                     type="button"
-                    onClick={() => setIsAdding(false)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 6,
-                      border: 'none',
-                      backgroundColor: 'transparent',
-                      color: '#57534e',
-                      fontSize: 11,
-                      cursor: 'pointer'
-                    }}
+                    onClick={() => setNewBlockType(null)}
+                    style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #d6cebf', background: '#fff', fontSize: 11, cursor: 'pointer' }}
                   >
                     Annuler
                   </button>
                   <button
                     type="submit"
-                    disabled={isSaving}
-                    style={{
-                      padding: '4px 12px',
-                      borderRadius: 6,
-                      border: 'none',
-                      backgroundColor: '#1c1917',
-                      color: '#ffffff',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#b45309', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                   >
-                    {isSaving ? 'Enregistrement...' : 'Épingler au Bento'}
+                    Ajouter ce bloc
                   </button>
                 </div>
               </form>
             )}
 
-            {/* GRILLE BENTO MODULAIRE DYNAMIQUE */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 8,
-                width: '100%'
-              }}
-            >
-              {/* Tuile Fixe 1 : Description de base (Pleine largeur) */}
-              {event.description && (
+            {/* Liste des blocs personnalisés */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10 }}>
+              {blocs.length === 0 && !newBlockType && (
+                <div style={{ color: '#a8a29e', fontSize: 11, fontStyle: 'italic', padding: 8 }}>
+                  Aucun bloc personnalisé.
+                </div>
+              )}
+
+              {blocs.map((bloc) => (
                 <div
+                  key={bloc.id}
                   style={{
-                    gridColumn: 'span 2',
-                    backgroundColor: 'rgba(255, 253, 248, 0.92)',
-                    border: '1px solid rgba(60, 45, 30, 0.15)',
-                    borderRadius: 10,
-                    padding: 12,
-                    boxShadow: '0 2px 6px rgba(40, 25, 10, 0.06)'
+                    backgroundColor: '#ffffff',
+                    borderRadius: 8,
+                    border: '1px solid #e7ded0',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span style={{ fontSize: 12 }}>📜</span>
-                    <span style={{ fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.8, color: '#6b3a19' }}>
-                      Contexte général
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#1c1917' }}>
+                      {bloc.type === 'link' ? '🔗 ' : '📝 '}
+                      {bloc.titre}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveBlock(bloc.id)}
+                      title="Supprimer ce bloc"
+                      style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 11 }}
+                    >
+                      ✕
+                    </button>
                   </div>
-                  <p style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: '#1c1917' }}>
-                    {event.description}
-                  </p>
+
+                  {bloc.url && (
+                    <a
+                      href={bloc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: 10, color: '#b45309', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {bloc.url} ↗
+                    </a>
+                  )}
+
+                  {bloc.texte && (
+                    <p style={{ margin: 0, fontSize: 11, color: '#57534e', lineHeight: 1.4 }}>
+                      {bloc.texte}
+                    </p>
+                  )}
                 </div>
-              )}
-
-              {/* Tuiles dynamiques créées par l'utilisateur */}
-              {bentoItems.map((item) => {
-                // Détection de la taille Bento selon la longueur du contenu
-                const isWide = item.type === 'quote' || item.type === 'text' || (item.content && item.content.length > 70);
-
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      gridColumn: isWide ? 'span 2' : 'span 1',
-                      backgroundColor: item.type === 'quote' ? '#f5efe4' : 'rgba(255, 253, 248, 0.92)',
-                      border: item.type === 'quote' ? '1px solid #dfd3bf' : '1px solid rgba(60, 45, 30, 0.15)',
-                      borderRadius: 10,
-                      padding: 10,
-                      boxShadow: '0 2px 6px rgba(40, 25, 10, 0.06)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      position: 'relative'
-                    }}
-                  >
-                    <div>
-                      {/* En-tête de la tuile avec titre et corbeille */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <span style={{ fontSize: 12 }}>
-                            {item.type === 'link' ? '🔗' : (item.type === 'quote' ? '“' : (item.type === 'book' ? '📚' : '📝'))}
-                          </span>
-                          {item.title && (
-                            <span style={{ fontSize: 10, fontWeight: 'bold', color: '#1c1917' }}>
-                              {item.title}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(item.id)}
-                          title="Supprimer cette référence"
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#a8a29e',
-                            cursor: 'pointer',
-                            fontSize: 10,
-                            padding: '0 2px'
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-
-                      {/* Contenu */}
-                      {item.content && (
-                        <p style={{
-                          margin: 0,
-                          fontSize: 11,
-                          lineHeight: 1.45,
-                          fontStyle: item.type === 'quote' ? 'italic' : 'normal',
-                          color: item.type === 'quote' ? '#451a03' : '#292524'
-                        }}>
-                          {item.content}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Lien cliquable externe */}
-                    {item.url && (
-                      <div style={{ marginTop: 6 }}>
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            fontSize: 10,
-                            color: '#1c1917',
-                            fontWeight: 600,
-                            textDecoration: 'none',
-                            backgroundColor: '#ebe4d8',
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            border: '1px solid #d4c8b6'
-                          }}
-                        >
-                          <span>{item.title || "Consulter le lien"}</span>
-                          <span style={{ fontSize: 8 }}>↗</span>
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Message d'accueil si aucune tuile n'a encore été ajoutée */}
-              {bentoItems.length === 0 && !event.description && (
-                <div
-                  style={{
-                    gridColumn: 'span 2',
-                    padding: 16,
-                    textAlign: 'center',
-                    backgroundColor: 'rgba(255, 253, 248, 0.5)',
-                    border: '1px dashed #c4b9a8',
-                    borderRadius: 10,
-                    fontSize: 11,
-                    color: '#57534e'
-                  }}
-                >
-                  Aucune note ou référence pour le moment.<br />
-                  Clique sur <strong>+ Ajouter</strong> pour épingler ta première note, citation ou lien.
-                </div>
-              )}
+              ))}
             </div>
-          </div>
 
+          </div>
         </div>
       </div>
+
+      {/* Modale de recherche Wikimedia */}
+      <WikimediaPickerModal
+        isOpen={isWikiPickerOpen}
+        onClose={() => setIsWikiPickerOpen(false)}
+        onSelectImage={handleSelectWikimedia}
+      />
 
       {/* Lightbox plein écran */}
       {previewCard && (
@@ -690,7 +757,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             position: 'fixed',
             inset: 0,
             zIndex: 100,
-            backgroundColor: 'rgba(28, 25, 23, 0.92)',
+            backgroundColor: 'rgba(28, 25, 23, 0.85)',
             backdropFilter: 'blur(8px)',
             display: 'flex',
             flexDirection: 'column',
@@ -700,13 +767,12 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             cursor: 'zoom-out'
           }}
         >
-          <div style={{ position: 'absolute', top: 18, right: 24, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: '#e7e5e4' }}>Appuyez sur Échap ou cliquez pour fermer</span>
+          <div style={{ position: 'absolute', top: 18, right: 24 }}>
             <button
               onClick={() => setPreviewCard(null)}
               style={{
-                background: 'rgba(255, 255, 255, 0.15)',
-                border: '1px solid #78716c',
+                background: 'rgba(255, 255, 255, 0.2)',
+                border: 'none',
                 color: '#ffffff',
                 borderRadius: '50%',
                 width: 32,
@@ -718,7 +784,6 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               ✕
             </button>
           </div>
-
           <img
             src={previewCard.url}
             alt={previewCard.titre}
@@ -729,25 +794,10 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               maxHeight: '84vh',
               objectFit: 'contain',
               borderRadius: 8,
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7)',
-              cursor: 'default'
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)'
             }}
           />
-
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              marginTop: 12,
-              padding: '6px 16px',
-              backgroundColor: 'rgba(40, 32, 24, 0.9)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: 20,
-              fontSize: 12,
-              color: '#fdfbf7',
-              textAlign: 'center',
-              maxWidth: '80%'
-            }}
-          >
+          <div style={{ marginTop: 10, padding: '4px 12px', backgroundColor: '#fff', borderRadius: 16, fontSize: 11, color: '#1c1917' }}>
             {previewCard.titre}
           </div>
         </div>

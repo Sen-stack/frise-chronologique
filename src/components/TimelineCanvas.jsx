@@ -21,6 +21,7 @@ import EventPopup from './EventPopup.jsx';
 import FilterDrawer from './FilterDrawer.jsx';
 import EventModal from './EventModal.jsx';
 import KnowledgeSplitView from './KnowledgeSplitView.jsx';
+import EventEditDrawer from './EventEditDrawer.jsx';
 
 export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
@@ -51,13 +52,16 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Mode Split View indépendant
+  // Split View haut
   const [isSplitViewOpen, setIsSplitViewOpen] = useState(false);
   const [splitEvent, setSplitEvent] = useState(null);
 
-  // Formulaire d'ajout / modification
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEventId, setEditingEventId] = useState(null);
+  // Volet latéral droit de modification (Slide-over)
+  const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+  const [editingTargetEvent, setEditingTargetEvent] = useState(null);
+
+  // Pop-up centrale épurée de création
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [isRange, setIsRange] = useState(false);
@@ -69,11 +73,7 @@ export default function TimelineCanvas() {
     ereFin: 'CE',
     tags: [Object.keys(DEFAULT_TAG_PALETTE)[0]],
     couleur: COLOR_PRESETS[0].stroke,
-    importance: 3,
-    description: '',
-    latitude: '',
-    longitude: '',
-    cartesHistoriques: []
+    importance: 3
   });
 
   const viewRef = useRef(viewRange);
@@ -117,7 +117,6 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
-  // Dessin de la scène (Canvas) avec gestion des thèmes
   const drawScene = () => {
     const th = THEMES[currentTheme]?.canvas || THEMES.dark.canvas;
     const cMain = canvasMainRef.current;
@@ -152,13 +151,11 @@ export default function TimelineCanvas() {
     const barWidth = Math.max(0, visibleBarX2 - visibleBarX1);
 
     ctx.save();
-    // 1. Double volume / ombre portée minérale
     ctx.shadowColor = currentTheme === 'light' ? 'rgba(74, 50, 30, 0.28)' : 'rgba(0, 0, 0, 0.6)';
     ctx.shadowBlur = 16;
     ctx.shadowOffsetY = 6;
     ctx.shadowOffsetX = 0;
 
-    // 2. Corps moulé aux bords arrondis
     ctx.fillStyle = th.axisBg;
     ctx.beginPath();
     if (ctx.roundRect) {
@@ -168,7 +165,6 @@ export default function TimelineCanvas() {
     }
     ctx.fill();
 
-    // 3. Liseré supérieur doux
     ctx.shadowColor = 'transparent';
     ctx.strokeStyle = currentTheme === 'light' ? 'rgba(255, 255, 255, 0.5)' : th.axisBorder;
     ctx.lineWidth = 1.5;
@@ -292,7 +288,7 @@ export default function TimelineCanvas() {
       hitboxesRef.current.push({ type: 'circle', x, y: yT, r: 14, evt });
     });
 
-    // Dessin de la minimap
+    // Minimap
     mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
 
@@ -357,7 +353,6 @@ export default function TimelineCanvas() {
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
 
-    // Si Split View est ouvert, la frise occupe les 50 % inférieurs
     const availableH = isSplitViewOpen ? totalH * 0.5 : totalH;
 
     canvasMainRef.current.width = totalW;
@@ -399,7 +394,7 @@ export default function TimelineCanvas() {
     drawScene();
   }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
 
-  // Interactions (drag & zoom)
+  // Navigation drag & zoom
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -444,7 +439,6 @@ export default function TimelineCanvas() {
       }
     };
 
-    // Clic : clic dans le vide ne ferme PAS le split, clic sur un autre événement le met à jour
     const onMainClick = (e) => {
       const rect = cMain.getBoundingClientRect();
       const cx = e.clientX - rect.left;
@@ -465,10 +459,11 @@ export default function TimelineCanvas() {
         const targetY = hit.y;
         setPopupPos({ x: targetX, y: targetY });
 
-        // Si le volet est déjà ouvert, on bascule directement sur le nouvel événement
         setSplitEvent(prev => (prev ? hit.evt : null));
+        if (isEditDrawerOpen) {
+          setEditingTargetEvent(hit.evt);
+        }
       } else {
-        // Clic dans le vide : on masque seulement la bulle volante
         setSelectedEvent(null);
       }
     };
@@ -552,10 +547,10 @@ export default function TimelineCanvas() {
       window.removeEventListener('mousemove', onMiniMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, []);
+  }, [isEditDrawerOpen]);
 
+  // Ouverture pop-up création
   const handleOpenCreateModal = () => {
-    setEditingEventId(null);
     setFormError('');
     setIsRange(false);
     setFormData({
@@ -566,58 +561,17 @@ export default function TimelineCanvas() {
       ereFin: 'CE',
       tags: [availableTags[0] || Object.keys(DEFAULT_TAG_PALETTE)[0]],
       couleur: COLOR_PRESETS[0].stroke,
-      importance: 3,
-      description: '',
-      latitude: '',
-      longitude: '',
-      cartesHistoriques: []
+      importance: 3
     });
-    setIsModalOpen(true);
+    setIsCreateModalOpen(true);
   };
 
-  const handleOpenEditModal = (evt) => {
-    if (!evt) return;
-    setEditingEventId(evt.id);
-    setFormError('');
-
-    const isEvtRange = evt.date_fin !== null && evt.date_fin !== undefined && evt.date_fin !== '';
-    setIsRange(isEvtRange);
-
-    const startAbs = Math.abs(evt.date_debut);
-    const startEre = evt.date_debut < 0 ? 'BCE' : 'CE';
-
-    let endAbs = '';
-    let endEre = 'CE';
-    if (isEvtRange) {
-      endAbs = Math.abs(evt.date_fin);
-      endEre = evt.date_fin < 0 ? 'BCE' : 'CE';
-    }
-
-    const itemTags = Array.isArray(evt.tags) && evt.tags.length > 0 ? evt.tags : [evt.categorie || "Général"];
-    const style = getItemStyle(evt);
-
-    let cartesList = [];
-    if (Array.isArray(evt.cartes_historiques)) {
-      cartesList = evt.cartes_historiques;
-    } else if (evt.carte_historique_url) {
-      cartesList = [{ source: 'archive', titre: evt.carte_legende || 'Carte historique', url: evt.carte_historique_url }];
-    }
-
-    setFormData({
-      titre: evt.titre || '',
-      anneeDebut: startAbs.toString(),
-      ereDebut: startEre,
-      anneeFin: endAbs.toString(),
-      ereFin: endEre,
-      tags: itemTags,
-      couleur: evt.couleur || style.stroke,
-      importance: evt.importance || 3,
-      description: evt.description || '',
-      latitude: evt.latitude ?? '',
-      longitude: evt.longitude ?? '',
-      cartesHistoriques: cartesList
-    });
-    setIsModalOpen(true);
+  // Ouverture volet latéral droit de modification
+  const handleOpenEditDrawer = (evt) => {
+    const target = evt || selectedEvent;
+    if (!target) return;
+    setEditingTargetEvent(target);
+    setIsEditDrawerOpen(true);
   };
 
   const handleOpenSplit = (evt) => {
@@ -644,37 +598,32 @@ export default function TimelineCanvas() {
     } else {
       setEvents(prev => prev.filter(e => e.id !== evt.id));
       setSelectedEvent(null);
-      if (splitEvent && splitEvent.id === evt.id) {
-        handleCloseSplit();
-      }
+      if (splitEvent && splitEvent.id === evt.id) handleCloseSplit();
+      if (editingTargetEvent && editingTargetEvent.id === evt.id) setIsEditDrawerOpen(false);
     }
   };
 
-  const handleAddNewTag = () => {
-    const trimmed = newTagInput.trim();
-    if (!trimmed) return;
-    if (!availableTags.includes(trimmed)) {
-      setAvailableTags(prev => [...prev, trimmed]);
-      setSelectedTags(prev => [...prev, trimmed]);
+  // Sauvegarde des modifications depuis le tiroir latéral
+  const handleSaveFromDrawer = async (eventId, payload) => {
+    const { data, error } = await supabase
+      .from('evenements')
+      .update(payload)
+      .eq('id', eventId)
+      .select();
+
+    if (error) {
+      alert("Erreur de modification : " + error.message);
+    } else if (data && data.length > 0) {
+      const updated = data[0];
+      setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+      setSelectedEvent(updated);
+      if (splitEvent && splitEvent.id === updated.id) setSplitEvent(updated);
+      setIsEditDrawerOpen(false);
     }
-    if (!formData.tags.includes(trimmed)) {
-      setFormData(prev => ({ ...prev, tags: [...prev.tags, trimmed] }));
-    }
-    setNewTagInput('');
   };
 
-  const toggleTagInForm = (tag) => {
-    setFormData(prev => {
-      const exists = prev.tags.includes(tag);
-      if (exists) {
-        if (prev.tags.length === 1) return prev;
-        return { ...prev, tags: prev.tags.filter(t => t !== tag) };
-      }
-      return { ...prev, tags: [...prev.tags, tag] };
-    });
-  };
-
-  const handleSubmit = async (e) => {
+  // Création depuis la pop-up épurée
+  const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
 
@@ -707,7 +656,6 @@ export default function TimelineCanvas() {
     setIsSubmitting(true);
     const calculatedPeriod = getAutoPeriod(calculatedStart);
     const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
-    const premiereCarte = formData.cartesHistoriques?.[0];
 
     const payload = {
       titre: formData.titre.trim(),
@@ -718,59 +666,59 @@ export default function TimelineCanvas() {
       periode: calculatedPeriod,
       couleur: formData.couleur || null,
       importance: Number(formData.importance),
-      description: formData.description.trim() || null,
-      latitude: formData.latitude !== '' ? Number(formData.latitude) : null,
-      longitude: formData.longitude !== '' ? Number(formData.longitude) : null,
-      cartes_historiques: formData.cartesHistoriques,
-      carte_historique_url: premiereCarte?.url || null,
-      carte_legende: premiereCarte?.titre || null
+      description: null,
+      latitude: null,
+      longitude: null,
+      cartes_historiques: []
     };
 
-    if (editingEventId) {
-      const { data, error } = await supabase
-        .from('evenements')
-        .update(payload)
-        .eq('id', editingEventId)
-        .select();
+    const { data, error } = await supabase
+      .from('evenements')
+      .insert([payload])
+      .select();
 
-      setIsSubmitting(false);
+    setIsSubmitting(false);
 
-      if (error) {
-        setFormError('Erreur de modification : ' + error.message);
-      } else if (data && data.length > 0) {
-        const updated = data[0];
-        setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
-        setSelectedEvent(updated);
-        if (splitEvent && splitEvent.id === updated.id) {
-          setSplitEvent(updated);
-        }
-        setIsModalOpen(false);
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('evenements')
-        .insert([payload])
-        .select();
+    if (error) {
+      setFormError('Erreur d’enregistrement : ' + error.message);
+    } else if (data && data.length > 0) {
+      const created = data[0];
+      setEvents(prev => [...prev, created]);
+      setCustomSelectedIds(prev => new Set([...prev, created.id]));
+      setSelectedEvent(created);
+      setIsCreateModalOpen(false);
 
-      setIsSubmitting(false);
-
-      if (error) {
-        setFormError('Erreur d’enregistrement : ' + error.message);
-      } else if (data && data.length > 0) {
-        const created = data[0];
-        setEvents(prev => [...prev, created]);
-        setCustomSelectedIds(prev => new Set([...prev, created.id]));
-        setSelectedEvent(created);
-        setIsModalOpen(false);
-
-        const centerYear = calculatedEnd ? (calculatedStart + calculatedEnd) / 2 : calculatedStart;
-        const span = viewRef.current.max - viewRef.current.min;
-        setViewRange({
-          min: centerYear - span / 2,
-          max: centerYear + span / 2
-        });
-      }
+      const centerYear = calculatedEnd ? (calculatedStart + calculatedEnd) / 2 : calculatedStart;
+      const span = viewRef.current.max - viewRef.current.min;
+      setViewRange({
+        min: centerYear - span / 2,
+        max: centerYear + span / 2
+      });
     }
+  };
+
+  const handleAddNewTag = () => {
+    const trimmed = newTagInput.trim();
+    if (!trimmed) return;
+    if (!availableTags.includes(trimmed)) {
+      setAvailableTags(prev => [...prev, trimmed]);
+      setSelectedTags(prev => [...prev, trimmed]);
+    }
+    if (!formData.tags.includes(trimmed)) {
+      setFormData(prev => ({ ...prev, tags: [...prev.tags, trimmed] }));
+    }
+    setNewTagInput('');
+  };
+
+  const toggleTagInForm = (tag) => {
+    setFormData(prev => {
+      const exists = prev.tags.includes(tag);
+      if (exists) {
+        if (prev.tags.length === 1) return prev;
+        return { ...prev, tags: prev.tags.filter(t => t !== tag) };
+      }
+      return { ...prev, tags: [...prev.tags, tag] };
+    });
   };
 
   const toggleFilterTag = (tag) => {
@@ -851,7 +799,7 @@ export default function TimelineCanvas() {
           <span>Filtres</span>
         </button>
 
-        {/* Sélecteur de thèmes (Sombre, Clair, Daltonien) */}
+        {/* Sélecteur de thèmes */}
         <div style={{
           display: 'flex',
           gap: 3,
@@ -906,11 +854,8 @@ export default function TimelineCanvas() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid #334155' }}>
             <button
               onClick={() => {
-                if (isSplitViewOpen) {
-                  handleCloseSplit();
-                } else {
-                  handleOpenSplit(selectedEvent);
-                }
+                if (isSplitViewOpen) handleCloseSplit();
+                else handleOpenSplit(selectedEvent);
               }}
               style={{
                 display: 'flex',
@@ -931,7 +876,7 @@ export default function TimelineCanvas() {
             </button>
 
             <button
-              onClick={() => handleOpenEditModal(activeHeaderEvent)}
+              onClick={() => handleOpenEditDrawer(activeHeaderEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1005,23 +950,22 @@ export default function TimelineCanvas() {
         event={selectedEvent}
         position={popupPos}
         onClose={() => setSelectedEvent(null)}
-        onEdit={handleOpenEditModal}
+        onEdit={handleOpenEditDrawer}
         onDelete={handleDeleteEvent}
         onDeepDive={() => handleOpenSplit(selectedEvent)}
       />
 
-      {/* 5. Modale de saisie / modification */}
+      {/* 5. Pop-up épurée de création (Image 2) */}
       <EventModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        isEditing={Boolean(editingEventId)}
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
         isSubmitting={isSubmitting}
         formError={formError}
         isRange={isRange}
         setIsRange={setIsRange}
         formData={formData}
         setFormData={setFormData}
-        onSubmit={handleSubmit}
+        onSubmit={handleCreateSubmit}
         availableTags={availableTags}
         newTagInput={newTagInput}
         setNewTagInput={setNewTagInput}
@@ -1029,7 +973,18 @@ export default function TimelineCanvas() {
         onToggleTag={toggleTagInForm}
       />
 
-      {/* 6. Zone Canvas (Frise chronologique dynamique) */}
+      {/* 6. Volet latéral droit de modification complète (Image 1) */}
+      <EventEditDrawer
+        isOpen={isEditDrawerOpen}
+        onClose={() => setIsEditDrawerOpen(false)}
+        event={editingTargetEvent}
+        onSave={handleSaveFromDrawer}
+        onDelete={handleDeleteEvent}
+        availableTags={availableTags}
+        onToggleTag={toggleTagInForm}
+      />
+
+      {/* 7. Zone Canvas principale */}
       <div style={{
         position: 'absolute',
         bottom: 70,
@@ -1042,7 +997,7 @@ export default function TimelineCanvas() {
         <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       </div>
 
-      {/* 7. Minimap basse */}
+      {/* 8. Minimap basse */}
       <div style={{
         position: 'absolute',
         bottom: 0,
