@@ -79,6 +79,34 @@ export default function TimelineCanvas() {
   const viewRef = useRef(viewRange);
   useEffect(() => { viewRef.current = viewRange; }, [viewRange]);
 
+  const targetViewRef = useRef({ min: 800, max: 1500 });
+  const animFrameRef = useRef(null);
+
+  const updateInertia = () => {
+    const cur = viewRef.current;
+    const tgt = targetViewRef.current;
+
+    const diffMin = tgt.min - cur.min;
+    const diffMax = tgt.max - cur.max;
+
+    if (Math.abs(diffMin) > 0.05 || Math.abs(diffMax) > 0.05) {
+      const nextMin = cur.min + diffMin * 0.22;
+      const nextMax = cur.max + diffMax * 0.22;
+      setViewRange({ min: nextMin, max: nextMax });
+      animFrameRef.current = requestAnimationFrame(updateInertia);
+    } else {
+      setViewRange({ min: tgt.min, max: tgt.max });
+      animFrameRef.current = null;
+    }
+  };
+
+  const smoothSetView = (nextTgt) => {
+    targetViewRef.current = nextTgt;
+    if (!animFrameRef.current) {
+      animFrameRef.current = requestAnimationFrame(updateInertia);
+    }
+  };
+
   const eventsRef = useRef(events);
   useEffect(() => { eventsRef.current = events; }, [events]);
 
@@ -139,7 +167,8 @@ export default function TimelineCanvas() {
     ctx.clearRect(0, 0, w, h);
     hitboxesRef.current = [];
 
-    const barY = h * 0.62;
+    const isMobile = w < 640;
+    const barY = h * (isMobile ? 0.70 : 0.62);
     const barTop = barY - BAR_HEIGHT / 2;
     const barBottom = barY + BAR_HEIGHT / 2;
 
@@ -181,7 +210,7 @@ export default function TimelineCanvas() {
     const interval = getTickInterval(span);
     const firstTick = Math.ceil(vMin / interval) * interval;
     ctx.fillStyle = th.tickText;
-    ctx.font = '11px sans-serif';
+    ctx.font = isMobile ? '10px sans-serif' : '11px sans-serif';
     ctx.textAlign = 'center';
 
     for (let t = firstTick; t <= vMax; t += interval) {
@@ -193,7 +222,7 @@ export default function TimelineCanvas() {
       ctx.moveTo(tx, barBottom);
       ctx.lineTo(tx, barBottom + 7);
       ctx.stroke();
-      ctx.fillText(formatYear(t), tx, barBottom + 20);
+      ctx.fillText(formatYear(t), tx, barBottom + (isMobile ? 16 : 20));
     }
 
     const allEvents = eventsRef.current || [];
@@ -246,22 +275,18 @@ export default function TimelineCanvas() {
       hitboxesRef.current.push({ type: 'rect', x: rX, y: trackY, w: rW, h: trackHeight, evt: p });
     });
 
-    // Dessin des ponctuels (Style Needle Pin épuré)
     ponctuels.forEach((evt, index) => {
       const x = yearToX(evt.date_debut);
       if (x < -200 || x > w + 200) return;
 
       const titreTexte = String(evt.titre || 'Sans titre');
-      // Étagement vertical propre pour éviter les chevauchements
-      const decalageY = 38 + (index % 3) * 32;
+      const decalageY = (isMobile ? 26 : 38) + (index % 3) * (isMobile ? 24 : 32);
       const yT = barTop - decalageY;
 
       const style = getItemStyle(evt);
       const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
-
       const pinColor = isSelected ? '#b45309' : (evt.couleur || style.stroke || '#854d0e');
 
-      // 1. Tige verticale extra-fine (Hairline Needle)
       ctx.strokeStyle = pinColor;
       ctx.lineWidth = isSelected ? 1.5 : 1;
       ctx.beginPath();
@@ -269,52 +294,45 @@ export default function TimelineCanvas() {
       ctx.lineTo(x, yT);
       ctx.stroke();
 
-      // 2. Ancrage sur le rebord du ruban (petite tête d'épingle)
       ctx.fillStyle = pinColor;
       ctx.beginPath();
       ctx.arc(x, barTop, isSelected ? 4 : 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // 3. Petit point au sommet de l'aiguille
       ctx.beginPath();
       ctx.arc(x, yT, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // 4. Texte flottant à droite (sans pavé de fond opaque)
       const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
 
       ctx.save();
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
 
-      // Ligne 1 : Date (en couleur d'accentuation)
-      ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      ctx.font = isMobile ? 'bold 10px system-ui, sans-serif' : 'bold 11px system-ui, sans-serif';
       ctx.fillStyle = pinColor;
-      ctx.fillText(anneeStr, x + 8, yT - 2);
+      ctx.fillText(anneeStr, x + 6, yT - 1);
 
-      // Ligne 2 : Titre de l'événement (ton bistre/chocolat doux et lisible)
       ctx.textBaseline = 'top';
       ctx.font = isSelected
-        ? 'bold 12px system-ui, -apple-system, sans-serif'
-        : '500 11px system-ui, -apple-system, sans-serif';
+        ? (isMobile ? 'bold 11px system-ui, sans-serif' : 'bold 12px system-ui, sans-serif')
+        : (isMobile ? '500 10px system-ui, sans-serif' : '500 11px system-ui, sans-serif');
       ctx.fillStyle = currentTheme === 'light' ? '#2b2118' : '#f8fafc';
-      ctx.fillText(titreTexte, x + 8, yT + 2);
+      ctx.fillText(titreTexte, x + 6, yT + 1);
 
       ctx.restore();
 
-      // Zone interactive pour le clic
       const textW = ctx.measureText(titreTexte).width;
       hitboxesRef.current.push({
         type: 'rect',
-        x: x - 6,
-        y: yT - 14,
-        w: textW + 20,
-        h: 34,
+        x: x - 10,
+        y: yT - 16,
+        w: textW + 28,
+        h: 38,
         evt
       });
     });
 
-    // Minimap
     mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
 
@@ -330,9 +348,9 @@ export default function TimelineCanvas() {
       mctx.strokeRect(currentX, 6, segWidth, 28);
 
       mctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      mctx.font = '10px sans-serif';
+      mctx.font = isMobile ? '8px sans-serif' : '10px sans-serif';
       mctx.textAlign = 'center';
-      mctx.fillText(seg.nom, currentX + segWidth / 2, 23);
+      mctx.fillText(isMobile ? seg.nom.slice(0, 4) : seg.nom, currentX + segWidth / 2, 23);
       currentX += segWidth;
     });
 
@@ -367,7 +385,7 @@ export default function TimelineCanvas() {
     mctx.fillRect(left + bWidth - 4, 6, 4, 38);
 
     mctx.fillStyle = '#94a3b8';
-    mctx.font = '10px sans-serif';
+    mctx.font = '9px sans-serif';
     mctx.textAlign = 'left';
     mctx.fillText("-4.5 Ga", MINI_PAD, 60);
     mctx.textAlign = 'right';
@@ -420,6 +438,7 @@ export default function TimelineCanvas() {
     drawScene();
   }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
 
+  // ÉCOUTEURS SOURIS + TACTILE SMARTPHONE
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -435,11 +454,15 @@ export default function TimelineCanvas() {
     let miniStartMin = 0;
     let miniStartMax = 0;
 
+    let touchStartDist = null;
+    let touchStartCenterYear = 0;
+    let touchStartSpan = 0;
+
     const onMainMouseDown = (e) => {
       isMainDragging = true;
       dragStartX = e.clientX;
-      dragStartMin = viewRef.current.min;
-      dragStartMax = viewRef.current.max;
+      dragStartMin = targetViewRef.current.min;
+      dragStartMax = targetViewRef.current.max;
     };
 
     const onMainMouseMove = (e) => {
@@ -447,27 +470,85 @@ export default function TimelineCanvas() {
       const dx = e.clientX - dragStartX;
       const span = dragStartMax - dragStartMin;
       const shift = (dx / cMain.width) * span;
-      setViewRange({ min: dragStartMin - shift, max: dragStartMax - shift });
+      smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
     };
 
     const onMainWheel = (e) => {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 1.15 : 0.85;
-      const { min: vMin, max: vMax } = viewRef.current;
+      const { min: vMin, max: vMax } = targetViewRef.current;
       const span = vMax - vMin;
       const mouseYear = vMin + (e.clientX / cMain.width) * span;
 
       const nMin = mouseYear + (vMin - mouseYear) * factor;
       const nMax = mouseYear + (vMax - mouseYear) * factor;
       if (nMax - nMin > 1) {
-        setViewRange({ min: nMin, max: nMax });
+        smoothSetView({ min: nMin, max: nMax });
+      }
+    };
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 1) {
+        isMainDragging = true;
+        dragStartX = e.touches[0].clientX;
+        dragStartMin = targetViewRef.current.min;
+        dragStartMax = targetViewRef.current.max;
+        touchStartDist = null;
+      } else if (e.touches.length === 2) {
+        isMainDragging = false;
+        const x1 = e.touches[0].clientX;
+        const x2 = e.touches[1].clientX;
+        touchStartDist = Math.hypot(x1 - x2, e.touches[0].clientY - e.touches[1].clientY);
+
+        const { min: vMin, max: vMax } = targetViewRef.current;
+        touchStartSpan = vMax - vMin;
+        const midX = (x1 + x2) / 2;
+        touchStartCenterYear = vMin + (midX / cMain.width) * touchStartSpan;
+      }
+    };
+
+    const onTouchMove = (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && isMainDragging) {
+        const dx = e.touches[0].clientX - dragStartX;
+        const span = dragStartMax - dragStartMin;
+        const shift = (dx / cMain.width) * span;
+        smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
+      } else if (e.touches.length === 2 && touchStartDist) {
+        const x1 = e.touches[0].clientX;
+        const x2 = e.touches[1].clientX;
+        const currentDist = Math.hypot(x1 - x2, e.touches[0].clientY - e.touches[1].clientY);
+
+        if (currentDist > 0) {
+          const scale = touchStartDist / currentDist;
+          const nextSpan = Math.max(1, touchStartSpan * scale);
+          const midX = (x1 + x2) / 2;
+          const ratio = midX / cMain.width;
+          smoothSetView({
+            min: touchStartCenterYear - nextSpan * ratio,
+            max: touchStartCenterYear + nextSpan * (1 - ratio)
+          });
+        }
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (e.touches.length === 0) {
+        isMainDragging = false;
+        touchStartDist = null;
+      } else if (e.touches.length === 1) {
+        isMainDragging = true;
+        dragStartX = e.touches[0].clientX;
+        dragStartMin = targetViewRef.current.min;
+        dragStartMax = targetViewRef.current.max;
+        touchStartDist = null;
       }
     };
 
     const onMainClick = (e) => {
       const rect = cMain.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
+      const cx = (e.clientX || (e.changedTouches && e.changedTouches[0].clientX)) - rect.left;
+      const cy = (e.clientY || (e.changedTouches && e.changedTouches[0].clientY)) - rect.top;
 
       const hit = hitboxesRef.current.find(h => {
         if (h.type === 'circle') {
@@ -493,63 +574,60 @@ export default function TimelineCanvas() {
       }
     };
 
-    const onMiniMouseDown = (e) => {
+    const onMiniStart = (clientX) => {
       const mw = cMini.width;
-      const clickX = e.clientX;
-      const { min: vMin, max: vMax } = viewRef.current;
-
+      const { min: vMin, max: vMax } = targetViewRef.current;
       const vx1 = yearToMiniX(vMin, mw);
       const vx2 = yearToMiniX(vMax, mw);
       const left = Math.min(vx1, vx2);
       const right = Math.max(vx1, vx2);
 
-      miniDragStartX = clickX;
+      miniDragStartX = clientX;
       miniStartMin = vMin;
       miniStartMax = vMax;
 
-      if (Math.abs(clickX - left) <= HANDLE_WIDTH) {
+      if (Math.abs(clientX - left) <= HANDLE_WIDTH + 8) {
         miniMode = 'left';
-      } else if (Math.abs(clickX - right) <= HANDLE_WIDTH) {
+      } else if (Math.abs(clientX - right) <= HANDLE_WIDTH + 8) {
         miniMode = 'right';
-      } else if (clickX > left && clickX < right) {
+      } else if (clientX > left && clientX < right) {
         miniMode = 'move';
       } else {
-        const clickedYear = miniXToYear(clickX, mw);
+        const clickedYear = miniXToYear(clientX, mw);
         const currentSpan = vMax - vMin;
-        setViewRange({ min: clickedYear - currentSpan / 2, max: clickedYear + currentSpan / 2 });
+        smoothSetView({ min: clickedYear - currentSpan / 2, max: clickedYear + currentSpan / 2 });
         miniMode = 'move';
       }
     };
 
-    const onMiniMouseMove = (e) => {
+    const onMiniMove = (clientX) => {
       const mw = cMini.width;
-      if (!miniMode) {
-        const { min: vMin, max: vMax } = viewRef.current;
-        const left = Math.min(yearToMiniX(vMin, mw), yearToMiniX(vMax, mw));
-        const right = Math.max(yearToMiniX(vMin, mw), yearToMiniX(vMax, mw));
-        if (Math.abs(e.clientX - left) <= HANDLE_WIDTH || Math.abs(e.clientX - right) <= HANDLE_WIDTH) {
-          cMini.style.cursor = 'ew-resize';
-        } else if (e.clientX > left && e.clientX < right) {
-          cMini.style.cursor = 'grab';
-        } else {
-          cMini.style.cursor = 'pointer';
-        }
-        return;
-      }
-
-      const targetYear = miniXToYear(e.clientX, mw);
+      const targetYear = miniXToYear(clientX, mw);
       if (miniMode === 'move') {
         const startYear = miniXToYear(miniDragStartX, mw);
         const shift = targetYear - startYear;
-        setViewRange({ min: miniStartMin + shift, max: miniStartMax + shift });
+        smoothSetView({ min: miniStartMin + shift, max: miniStartMax + shift });
       } else if (miniMode === 'left') {
-        if (viewRef.current.max - targetYear >= 1) setViewRange(v => ({ ...v, min: targetYear }));
+        if (targetViewRef.current.max - targetYear >= 1) smoothSetView({ min: targetYear, max: targetViewRef.current.max });
       } else if (miniMode === 'right') {
-        if (targetYear - viewRef.current.min >= 1) setViewRange(v => ({ ...v, max: targetYear }));
+        if (targetYear - targetViewRef.current.min >= 1) smoothSetView({ min: targetViewRef.current.min, max: targetYear });
       }
     };
 
-    const onMouseUp = () => {
+    const onMiniMouseDown = (e) => onMiniStart(e.clientX);
+    const onMiniMouseMove = (e) => {
+      if (miniMode) onMiniMove(e.clientX);
+    };
+
+    const onMiniTouchStart = (e) => {
+      if (e.touches.length > 0) onMiniStart(e.touches[0].clientX);
+    };
+    const onMiniTouchMove = (e) => {
+      e.preventDefault();
+      if (miniMode && e.touches.length > 0) onMiniMove(e.touches[0].clientX);
+    };
+
+    const onEnd = () => {
       isMainDragging = false;
       miniMode = null;
     };
@@ -561,16 +639,33 @@ export default function TimelineCanvas() {
 
     cMini.addEventListener('mousedown', onMiniMouseDown);
     window.addEventListener('mousemove', onMiniMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('mouseup', onEnd);
+
+    cMain.addEventListener('touchstart', onTouchStart, { passive: false });
+    cMain.addEventListener('touchmove', onTouchMove, { passive: false });
+    cMain.addEventListener('touchend', onTouchEnd);
+
+    cMini.addEventListener('touchstart', onMiniTouchStart, { passive: false });
+    cMini.addEventListener('touchmove', onMiniTouchMove, { passive: false });
+    cMini.addEventListener('touchend', onEnd);
 
     return () => {
       cMain.removeEventListener('mousedown', onMainMouseDown);
       window.removeEventListener('mousemove', onMainMouseMove);
       cMain.removeEventListener('wheel', onMainWheel);
       cMain.removeEventListener('click', onMainClick);
+
       cMini.removeEventListener('mousedown', onMiniMouseDown);
       window.removeEventListener('mousemove', onMiniMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('mouseup', onEnd);
+
+      cMain.removeEventListener('touchstart', onTouchStart);
+      cMain.removeEventListener('touchmove', onTouchMove);
+      cMain.removeEventListener('touchend', onTouchEnd);
+
+      cMini.removeEventListener('touchstart', onMiniTouchStart);
+      cMini.removeEventListener('touchmove', onMiniTouchMove);
+      cMini.removeEventListener('touchend', onEnd);
     };
   }, [isEditDrawerOpen]);
 
@@ -710,8 +805,8 @@ export default function TimelineCanvas() {
       setIsCreateModalOpen(false);
 
       const centerYear = calculatedEnd ? (calculatedStart + calculatedEnd) / 2 : calculatedStart;
-      const span = viewRef.current.max - viewRef.current.min;
-      setViewRange({
+      const span = targetViewRef.current.max - targetViewRef.current.min;
+      smoothSetView({
         min: centerYear - span / 2,
         max: centerYear + span / 2
       });
@@ -721,123 +816,130 @@ export default function TimelineCanvas() {
   const activeHeaderEvent = splitEvent || selectedEvent;
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", touchAction: 'none' }}>
       
-      {/* 1. Volet supérieur (Knowledge Hub / Split View) */}
+      {/* 1. Knowledge Split View */}
       <KnowledgeSplitView
         isOpen={isSplitViewOpen}
         onClose={handleCloseSplit}
         event={splitEvent}
       />
 
-      {/* 2. BARRE D'OUTILS FIDÈLE À LA MAQUETTE */}
+      {/* 2. Indicateur de date en haut à gauche */}
+      <div
+        style={{
+          position: 'absolute',
+          top: isSplitViewOpen ? 'calc(50vh + 14px)' : 16,
+          left: 18,
+          zIndex: 20,
+          pointerEvents: 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+          transition: 'top 0.25s ease'
+        }}
+      >
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.8px',
+            color: '#8c7e72'
+          }}
+        >
+          Période
+        </span>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#2b2118', fontVariantNumeric: 'tabular-nums' }}>
+            {formatYear(viewRange.min)}
+          </span>
+          <span style={{ fontSize: 12, color: '#b4a594' }}>—</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#2b2118', fontVariantNumeric: 'tabular-nums' }}>
+            {formatYear(viewRange.max)}
+          </span>
+        </div>
+      </div>
+
+      {/* 3. Barre d'outils bien centrée avec le switch Jour / Nuit */}
       <div style={{
         position: 'absolute',
-        top: isSplitViewOpen ? 'calc(50% + 14px)' : 20,
+        top: isSplitViewOpen ? 'calc(50% + 12px)' : 14,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 20,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '6px 8px',
+        gap: 6,
+        padding: '5px 8px',
         backgroundColor: '#faf7f2',
         border: '1px solid #e7ded0',
-        borderRadius: 16,
-        boxShadow: '0 8px 30px rgba(44, 34, 22, 0.12)',
+        borderRadius: 14,
+        boxShadow: '0 6px 20px rgba(44, 34, 22, 0.1)',
         color: '#2b2118',
         transition: 'top 0.25s ease'
       }}>
-        {/* Plage temporelle avec icône calendrier */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '8px 14px',
-          backgroundColor: '#f3ece0',
-          borderRadius: 10,
-          border: '1px solid #e7ded0',
-          fontSize: 13,
-          fontWeight: 600,
-          color: '#44372b'
-        }}>
-          <span style={{ fontSize: 14 }}>🗓️</span>
-          <span>{formatYear(viewRange.min)} ➔ {formatYear(viewRange.max)}</span>
-        </div>
-
-        {/* Bouton Filtres */}
+        {/* Filtres */}
         <button
           type="button"
           onClick={() => setIsFilterOpen(!isFilterOpen)}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 16px',
+            padding: '6px 12px',
             backgroundColor: isFilterOpen ? '#e7ded0' : '#f3ece0',
             color: '#2b2118',
             border: '1px solid #e7ded0',
-            borderRadius: 10,
-            fontSize: 13,
+            borderRadius: 8,
+            fontSize: 11,
             fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'background-color 0.15s ease'
+            cursor: 'pointer'
           }}
         >
-          <span style={{ fontSize: 13 }}>🌪️</span>
-          <span>Filters</span>
+          Filtres
         </button>
 
-        {/* Bouton Soleil / Switch Thème */}
+        {/* Bouton Thème Jour / Nuit */}
         <button
           type="button"
           onClick={() => setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
-          title="Basculer le thème"
           style={{
-            width: 38,
-            height: 38,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            padding: '6px 10px',
             backgroundColor: '#f3ece0',
-            border: '1px solid #e7ded0',
-            borderRadius: 10,
-            cursor: 'pointer',
-            fontSize: 15,
             color: '#574838',
-            transition: 'background-color 0.15s ease'
+            border: '1px solid #e7ded0',
+            borderRadius: 8,
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer'
           }}
         >
-          {currentTheme === 'light' ? '☼' : '🌙'}
+          {currentTheme === 'light' ? 'Nuit' : 'Jour'}
         </button>
 
-        {/* Bouton d'action principal : + Add Event (Terracotta) */}
+        {/* Ajouter */}
         <button
           type="button"
           onClick={handleOpenCreateModal}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '8px 18px',
+            gap: 4,
+            padding: '6px 12px',
             backgroundColor: '#b45309',
             color: '#ffffff',
             border: 'none',
-            borderRadius: 10,
-            fontSize: 13,
+            borderRadius: 8,
+            fontSize: 11,
             fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(180, 83, 9, 0.35)',
-            transition: 'opacity 0.15s ease'
+            cursor: 'pointer'
           }}
         >
-          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
-          <span>Add Event</span>
+          <span>+</span>
+          <span>Ajouter</span>
         </button>
 
-        {/* Actions contextuelles : apparaissent quand un événement est cliqué */}
+        {/* Actions contextuelles */}
         {activeHeaderEvent && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid #e7ded0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 4, borderLeft: '1px solid #e7ded0' }}>
             <button
               type="button"
               onClick={() => {
@@ -845,62 +947,34 @@ export default function TimelineCanvas() {
                 else handleOpenSplit(selectedEvent);
               }}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '8px 12px',
+                padding: '6px 10px',
                 backgroundColor: isSplitViewOpen ? '#b45309' : '#f3ece0',
                 color: isSplitViewOpen ? '#ffffff' : '#b45309',
                 border: '1px solid #e7ded0',
-                borderRadius: 10,
-                fontSize: 12,
+                borderRadius: 8,
+                fontSize: 11,
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
             >
-              <span>🔍</span>
-              <span>{isSplitViewOpen ? 'Fermer volet' : 'Approfondir'}</span>
+              {isSplitViewOpen ? '✕' : 'Détails'}
             </button>
 
             <button
               type="button"
               onClick={() => handleOpenEditDrawer(activeHeaderEvent)}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '8px 10px',
+                padding: '6px 8px',
                 backgroundColor: '#f3ece0',
                 color: '#854d0e',
                 border: '1px solid #e7ded0',
-                borderRadius: 10,
-                fontSize: 12,
+                borderRadius: 8,
+                fontSize: 11,
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
             >
-              <span>✏️</span>
-              <span>Modifier</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleDeleteEvent(activeHeaderEvent)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '8px 10px',
-                backgroundColor: '#fff1f2',
-                color: '#e11d48',
-                border: '1px solid #fecaca',
-                borderRadius: 10,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              <span>🗑️</span>
+              Éditer
             </button>
           </div>
         )}
@@ -999,6 +1073,7 @@ export default function TimelineCanvas() {
         width: '100%',
         height: isSplitViewOpen ? 'calc(50% - 70px)' : 'calc(100% - 70px)',
         cursor: 'grab',
+        touchAction: 'none',
         transition: 'height 0.25s ease'
       }}>
         <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
@@ -1014,6 +1089,7 @@ export default function TimelineCanvas() {
         backgroundColor: '#020617',
         borderTop: '1px solid #1e293b',
         cursor: 'pointer',
+        touchAction: 'none',
         zIndex: 15
       }}>
         <canvas ref={canvasMiniRef} style={{ display: 'block', width: '100%', height: '100%' }} />
