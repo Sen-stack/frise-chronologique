@@ -27,13 +27,13 @@ export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
   const canvasMiniRef = useRef(null);
 
-  const [viewRange, setViewRange] = useState({ min: -1000, max: 2026 });
+  const [viewRange, setViewRange] = useState({ min: 800, max: 1500 });
   const [currentTheme, setCurrentTheme] = useState(() => {
-    return localStorage.getItem('chronos_theme') || 'dark';
+    return localStorage.getItem('chronos_theme') || 'light';
   });
 
   useEffect(() => {
-    document.body.className = THEMES[currentTheme]?.bgClass || 'theme-dark';
+    document.body.className = THEMES[currentTheme]?.bgClass || 'theme-gallery';
     localStorage.setItem('chronos_theme', currentTheme);
   }, [currentTheme]);
 
@@ -56,11 +56,11 @@ export default function TimelineCanvas() {
   const [isSplitViewOpen, setIsSplitViewOpen] = useState(false);
   const [splitEvent, setSplitEvent] = useState(null);
 
-  // Volet latéral droit de modification (Slide-over)
+  // Volet latéral droit de modification
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [editingTargetEvent, setEditingTargetEvent] = useState(null);
 
-  // Pop-up centrale épurée de création
+  // Pop-up création
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -118,7 +118,7 @@ export default function TimelineCanvas() {
   };
 
   const drawScene = () => {
-    const th = THEMES[currentTheme]?.canvas || THEMES.dark.canvas;
+    const th = THEMES[currentTheme]?.canvas || THEMES.light.canvas;
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
     if (!cMain || !cMini) return;
@@ -151,7 +151,7 @@ export default function TimelineCanvas() {
     const barWidth = Math.max(0, visibleBarX2 - visibleBarX1);
 
     ctx.save();
-    ctx.shadowColor = currentTheme === 'light' ? 'rgba(74, 50, 30, 0.28)' : 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowColor = currentTheme === 'light' ? 'rgba(74, 50, 30, 0.22)' : 'rgba(0, 0, 0, 0.6)';
     ctx.shadowBlur = 16;
     ctx.shadowOffsetY = 6;
     ctx.shadowOffsetX = 0;
@@ -210,7 +210,6 @@ export default function TimelineCanvas() {
     const periodes = filteredList.filter(e => e.date_fin !== null && e.date_fin !== undefined && e.date_fin !== '');
     const ponctuels = filteredList.filter(e => !e.date_fin);
 
-    // Dessin des périodes
     periodes.forEach((p, idx) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
@@ -247,45 +246,72 @@ export default function TimelineCanvas() {
       hitboxesRef.current.push({ type: 'rect', x: rX, y: trackY, w: rW, h: trackHeight, evt: p });
     });
 
-    // Dessin des ponctuels
+    // Dessin des ponctuels (Style Needle Pin épuré)
     ponctuels.forEach((evt, index) => {
       const x = yearToX(evt.date_debut);
       if (x < -200 || x > w + 200) return;
 
       const titreTexte = String(evt.titre || 'Sans titre');
-      const decalageY = 30 + (index % 3) * 35;
+      // Étagement vertical propre pour éviter les chevauchements
+      const decalageY = 38 + (index % 3) * 32;
       const yT = barTop - decalageY;
 
       const style = getItemStyle(evt);
       const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
 
-      ctx.strokeStyle = isSelected ? '#ffffff' : style.stroke;
-      ctx.lineWidth = isSelected ? 2 : 1.5;
+      const pinColor = isSelected ? '#b45309' : (evt.couleur || style.stroke || '#854d0e');
+
+      // 1. Tige verticale extra-fine (Hairline Needle)
+      ctx.strokeStyle = pinColor;
+      ctx.lineWidth = isSelected ? 1.5 : 1;
       ctx.beginPath();
       ctx.moveTo(x, barTop);
       ctx.lineTo(x, yT);
       ctx.stroke();
 
-      ctx.fillStyle = isSelected ? '#ffffff' : style.stroke;
+      // 2. Ancrage sur le rebord du ruban (petite tête d'épingle)
+      ctx.fillStyle = pinColor;
       ctx.beginPath();
-      ctx.arc(x, yT, isSelected ? 6 : 5, 0, Math.PI * 2);
+      ctx.arc(x, barTop, isSelected ? 4 : 3, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#e0f2fe';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
 
-      ctx.font = isSelected ? 'bold 13px sans-serif' : 'bold 12px sans-serif';
-      ctx.textBaseline = 'middle';
+      // 3. Petit point au sommet de l'aiguille
+      ctx.beginPath();
+      ctx.arc(x, yT, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4. Texte flottant à droite (sans pavé de fond opaque)
+      const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
+
+      ctx.save();
       ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+
+      // Ligne 1 : Date (en couleur d'accentuation)
+      ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = pinColor;
+      ctx.fillText(anneeStr, x + 8, yT - 2);
+
+      // Ligne 2 : Titre de l'événement (ton bistre/chocolat doux et lisible)
+      ctx.textBaseline = 'top';
+      ctx.font = isSelected
+        ? 'bold 12px system-ui, -apple-system, sans-serif'
+        : '500 11px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = currentTheme === 'light' ? '#2b2118' : '#f8fafc';
+      ctx.fillText(titreTexte, x + 8, yT + 2);
+
+      ctx.restore();
+
+      // Zone interactive pour le clic
       const textW = ctx.measureText(titreTexte).width;
-
-      ctx.fillStyle = isSelected ? style.stroke : 'rgba(15, 23, 42, 0.85)';
-      ctx.fillRect(x + 8, yT - 10, textW + 8, 20);
-
-      ctx.fillStyle = isSelected ? '#020617' : '#ffffff';
-      ctx.fillText(titreTexte, x + 12, yT);
-
-      hitboxesRef.current.push({ type: 'circle', x, y: yT, r: 14, evt });
+      hitboxesRef.current.push({
+        type: 'rect',
+        x: x - 6,
+        y: yT - 14,
+        w: textW + 20,
+        h: 34,
+        evt
+      });
     });
 
     // Minimap
@@ -330,7 +356,7 @@ export default function TimelineCanvas() {
     const right = Math.max(vx1, vx2);
     const bWidth = Math.max(10, right - left);
 
-    mctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+    mctx.fillStyle = 'rgba(180, 83, 9, 0.28)';
     mctx.fillRect(left, 4, bWidth, 42);
     mctx.strokeStyle = th.viewportBorder;
     mctx.lineWidth = 2;
@@ -394,7 +420,6 @@ export default function TimelineCanvas() {
     drawScene();
   }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
 
-  // Navigation drag & zoom
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -549,7 +574,6 @@ export default function TimelineCanvas() {
     };
   }, [isEditDrawerOpen]);
 
-  // Ouverture pop-up création
   const handleOpenCreateModal = () => {
     setFormError('');
     setIsRange(false);
@@ -566,7 +590,6 @@ export default function TimelineCanvas() {
     setIsCreateModalOpen(true);
   };
 
-  // Ouverture volet latéral droit de modification
   const handleOpenEditDrawer = (evt) => {
     const target = evt || selectedEvent;
     if (!target) return;
@@ -603,7 +626,6 @@ export default function TimelineCanvas() {
     }
   };
 
-  // Sauvegarde des modifications depuis le tiroir latéral
   const handleSaveFromDrawer = async (eventId, payload) => {
     const { data, error } = await supabase
       .from('evenements')
@@ -622,7 +644,6 @@ export default function TimelineCanvas() {
     }
   };
 
-  // Création depuis la pop-up épurée
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -697,56 +718,10 @@ export default function TimelineCanvas() {
     }
   };
 
-  const handleAddNewTag = () => {
-    const trimmed = newTagInput.trim();
-    if (!trimmed) return;
-    if (!availableTags.includes(trimmed)) {
-      setAvailableTags(prev => [...prev, trimmed]);
-      setSelectedTags(prev => [...prev, trimmed]);
-    }
-    if (!formData.tags.includes(trimmed)) {
-      setFormData(prev => ({ ...prev, tags: [...prev.tags, trimmed] }));
-    }
-    setNewTagInput('');
-  };
-
-  const toggleTagInForm = (tag) => {
-    setFormData(prev => {
-      const exists = prev.tags.includes(tag);
-      if (exists) {
-        if (prev.tags.length === 1) return prev;
-        return { ...prev, tags: prev.tags.filter(t => t !== tag) };
-      }
-      return { ...prev, tags: [...prev.tags, tag] };
-    });
-  };
-
-  const toggleFilterTag = (tag) => {
-    setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    );
-  };
-
-  const toggleCustomEvent = (id) => {
-    setCustomSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const selectAllCustom = () => setCustomSelectedIds(new Set(events.map(e => e.id)));
-  const deselectAllCustom = () => setCustomSelectedIds(new Set());
-
-  const searchedEvents = events.filter(e =>
-    e.titre.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const activeHeaderEvent = splitEvent || selectedEvent;
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
       
       {/* 1. Volet supérieur (Knowledge Hub / Split View) */}
       <KnowledgeSplitView
@@ -755,104 +730,116 @@ export default function TimelineCanvas() {
         event={splitEvent}
       />
 
-      {/* 2. Barre d'outils flottante */}
+      {/* 2. BARRE D'OUTILS FIDÈLE À LA MAQUETTE */}
       <div style={{
         position: 'absolute',
-        top: isSplitViewOpen ? 'calc(50% + 12px)' : 14,
+        top: isSplitViewOpen ? 'calc(50% + 14px)' : 20,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 20,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        padding: '6px 12px',
-        backgroundColor: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(51, 65, 85, 0.6)',
-        borderRadius: 30,
-        boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-        color: '#f8fafc',
+        padding: '6px 8px',
+        backgroundColor: '#faf7f2',
+        border: '1px solid #e7ded0',
+        borderRadius: 16,
+        boxShadow: '0 8px 30px rgba(44, 34, 22, 0.12)',
+        color: '#2b2118',
         transition: 'top 0.25s ease'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 8, borderRight: '1px solid #334155' }}>
-          <span style={{ fontSize: 14 }}>⏳</span>
-          <span style={{ fontWeight: 'bold', fontSize: 12, color: '#38bdf8' }}>Chronos</span>
+        {/* Plage temporelle avec icône calendrier */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 14px',
+          backgroundColor: '#f3ece0',
+          borderRadius: 10,
+          border: '1px solid #e7ded0',
+          fontSize: 13,
+          fontWeight: 600,
+          color: '#44372b'
+        }}>
+          <span style={{ fontSize: 14 }}>🗓️</span>
+          <span>{formatYear(viewRange.min)} ➔ {formatYear(viewRange.max)}</span>
         </div>
 
+        {/* Bouton Filtres */}
         <button
+          type="button"
           onClick={() => setIsFilterOpen(!isFilterOpen)}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 12px',
-            backgroundColor: isFilterOpen ? '#0284c7' : 'rgba(30, 41, 59, 0.8)',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 20,
-            fontSize: 11,
+            padding: '8px 16px',
+            backgroundColor: isFilterOpen ? '#e7ded0' : '#f3ece0',
+            color: '#2b2118',
+            border: '1px solid #e7ded0',
+            borderRadius: 10,
+            fontSize: 13,
             fontWeight: 600,
-            cursor: 'pointer'
+            cursor: 'pointer',
+            transition: 'background-color 0.15s ease'
           }}
         >
-          <span>🏷️</span>
-          <span>Filtres</span>
+          <span style={{ fontSize: 13 }}>🌪️</span>
+          <span>Filters</span>
         </button>
 
-        {/* Sélecteur de thèmes */}
-        <div style={{
-          display: 'flex',
-          gap: 3,
-          backgroundColor: 'rgba(2, 6, 23, 0.4)',
-          borderRadius: 20,
-          padding: 2,
-          border: '1px solid rgba(255, 255, 255, 0.08)'
-        }}>
-          {Object.values(THEMES).map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setCurrentTheme(t.id)}
-              title={`Thème : ${t.name}`}
-              style={{
-                padding: '4px 8px',
-                borderRadius: 16,
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 12,
-                backgroundColor: currentTheme === t.id ? '#0284c7' : 'transparent',
-                transition: 'background-color 0.15s ease'
-              }}
-            >
-              {t.icon}
-            </button>
-          ))}
-        </div>
-
+        {/* Bouton Soleil / Switch Thème */}
         <button
+          type="button"
+          onClick={() => setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
+          title="Basculer le thème"
+          style={{
+            width: 38,
+            height: 38,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#f3ece0',
+            border: '1px solid #e7ded0',
+            borderRadius: 10,
+            cursor: 'pointer',
+            fontSize: 15,
+            color: '#574838',
+            transition: 'background-color 0.15s ease'
+          }}
+        >
+          {currentTheme === 'light' ? '☼' : '🌙'}
+        </button>
+
+        {/* Bouton d'action principal : + Add Event (Terracotta) */}
+        <button
+          type="button"
           onClick={handleOpenCreateModal}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 14px',
-            backgroundColor: '#0284c7',
+            padding: '8px 18px',
+            backgroundColor: '#b45309',
             color: '#ffffff',
             border: 'none',
-            borderRadius: 20,
-            fontSize: 11,
-            fontWeight: 'bold',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
             cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.4)'
+            boxShadow: '0 2px 8px rgba(180, 83, 9, 0.35)',
+            transition: 'opacity 0.15s ease'
           }}
         >
-          <span style={{ fontSize: 13 }}>+</span>
-          <span>Ajouter</span>
+          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
+          <span>Add Event</span>
         </button>
 
+        {/* Actions contextuelles : apparaissent quand un événement est cliqué */}
         {activeHeaderEvent && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid #334155' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid #e7ded0' }}>
             <button
+              type="button"
               onClick={() => {
                 if (isSplitViewOpen) handleCloseSplit();
                 else handleOpenSplit(selectedEvent);
@@ -861,32 +848,33 @@ export default function TimelineCanvas() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                padding: '6px 12px',
-                backgroundColor: isSplitViewOpen ? '#38bdf8' : 'rgba(56, 189, 248, 0.2)',
-                color: isSplitViewOpen ? '#020617' : '#38bdf8',
-                border: '1px solid rgba(56, 189, 248, 0.4)',
-                borderRadius: 20,
-                fontSize: 11,
+                padding: '8px 12px',
+                backgroundColor: isSplitViewOpen ? '#b45309' : '#f3ece0',
+                color: isSplitViewOpen ? '#ffffff' : '#b45309',
+                border: '1px solid #e7ded0',
+                borderRadius: 10,
+                fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
             >
               <span>🔍</span>
-              <span>{isSplitViewOpen ? 'Fermer le volet' : 'Approfondir'}</span>
+              <span>{isSplitViewOpen ? 'Fermer volet' : 'Approfondir'}</span>
             </button>
 
             <button
+              type="button"
               onClick={() => handleOpenEditDrawer(activeHeaderEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                padding: '6px 10px',
-                backgroundColor: 'rgba(234, 88, 12, 0.2)',
-                color: '#fb923c',
-                border: '1px solid rgba(251, 146, 60, 0.4)',
-                borderRadius: 20,
-                fontSize: 11,
+                padding: '8px 10px',
+                backgroundColor: '#f3ece0',
+                color: '#854d0e',
+                border: '1px solid #e7ded0',
+                borderRadius: 10,
+                fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
@@ -896,35 +884,29 @@ export default function TimelineCanvas() {
             </button>
 
             <button
+              type="button"
               onClick={() => handleDeleteEvent(activeHeaderEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                padding: '6px 10px',
-                backgroundColor: 'rgba(225, 29, 72, 0.2)',
-                color: '#f43f5e',
-                border: '1px solid rgba(244, 63, 94, 0.4)',
-                borderRadius: 20,
-                fontSize: 11,
+                padding: '8px 10px',
+                backgroundColor: '#fff1f2',
+                color: '#e11d48',
+                border: '1px solid #fecaca',
+                borderRadius: 10,
+                fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
             >
               <span>🗑️</span>
-              <span>Supprimer</span>
             </button>
           </div>
         )}
-
-        <div style={{ paddingLeft: 8, borderLeft: '1px solid #334155', fontSize: 11, color: '#94a3b8' }}>
-          <span style={{ color: '#38bdf8', fontWeight: 600 }}>{formatYear(viewRange.min)}</span>
-          <span style={{ margin: '0 4px' }}>➔</span>
-          <span style={{ color: '#38bdf8', fontWeight: 600 }}>{formatYear(viewRange.max)}</span>
-        </div>
       </div>
 
-      {/* 3. Volet latéral de filtres */}
+      {/* Volet filtres */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}
@@ -932,20 +914,25 @@ export default function TimelineCanvas() {
         setFilterMode={setFilterMode}
         availableTags={availableTags}
         selectedTags={selectedTags}
-        onToggleTag={toggleFilterTag}
+        onToggleTag={(tag) => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
         onSelectAllTags={() => setSelectedTags(availableTags)}
         onDeselectAllTags={() => setSelectedTags([])}
         events={events}
-        searchedEvents={searchedEvents}
+        searchedEvents={events.filter(e => e.titre.toLowerCase().includes(searchQuery.toLowerCase()))}
         customSelectedIds={customSelectedIds}
-        onToggleCustomEvent={toggleCustomEvent}
-        onSelectAllCustom={selectAllCustom}
-        onDeselectAllCustom={deselectAllCustom}
+        onToggleCustomEvent={(id) => setCustomSelectedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        })}
+        onSelectAllCustom={() => setCustomSelectedIds(new Set(events.map(e => e.id)))}
+        onDeselectAllCustom={() => setCustomSelectedIds(new Set())}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
       />
 
-      {/* 4. Pop-up informative au clic sur un événement */}
+      {/* Pop-up aperçu rapide */}
       <EventPopup
         event={selectedEvent}
         position={popupPos}
@@ -955,7 +942,7 @@ export default function TimelineCanvas() {
         onDeepDive={() => handleOpenSplit(selectedEvent)}
       />
 
-      {/* 5. Pop-up épurée de création (Image 2) */}
+      {/* Modale création */}
       <EventModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -969,11 +956,31 @@ export default function TimelineCanvas() {
         availableTags={availableTags}
         newTagInput={newTagInput}
         setNewTagInput={setNewTagInput}
-        onAddNewTag={handleAddNewTag}
-        onToggleTag={toggleTagInForm}
+        onAddNewTag={() => {
+          const trimmed = newTagInput.trim();
+          if (!trimmed) return;
+          if (!availableTags.includes(trimmed)) {
+            setAvailableTags(prev => [...prev, trimmed]);
+            setSelectedTags(prev => [...prev, trimmed]);
+          }
+          if (!formData.tags.includes(trimmed)) {
+            setFormData(prev => ({ ...prev, tags: [...prev.tags, trimmed] }));
+          }
+          setNewTagInput('');
+        }}
+        onToggleTag={(tag) => {
+          setFormData(prev => {
+            const exists = prev.tags.includes(tag);
+            if (exists) {
+              if (prev.tags.length === 1) return prev;
+              return { ...prev, tags: prev.tags.filter(t => t !== tag) };
+            }
+            return { ...prev, tags: [...prev.tags, tag] };
+          });
+        }}
       />
 
-      {/* 6. Volet latéral droit de modification complète (Image 1) */}
+      {/* Volet latéral droit d'édition */}
       <EventEditDrawer
         isOpen={isEditDrawerOpen}
         onClose={() => setIsEditDrawerOpen(false)}
@@ -981,10 +988,10 @@ export default function TimelineCanvas() {
         onSave={handleSaveFromDrawer}
         onDelete={handleDeleteEvent}
         availableTags={availableTags}
-        onToggleTag={toggleTagInForm}
+        onToggleTag={() => {}}
       />
 
-      {/* 7. Zone Canvas principale */}
+      {/* Zone Canvas frise */}
       <div style={{
         position: 'absolute',
         bottom: 70,
@@ -997,7 +1004,7 @@ export default function TimelineCanvas() {
         <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       </div>
 
-      {/* 8. Minimap basse */}
+      {/* Minimap basse */}
       <div style={{
         position: 'absolute',
         bottom: 0,

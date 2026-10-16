@@ -9,9 +9,12 @@ html, body, #root {
   padding: 0;
   overflow: hidden;
   user-select: none;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 1. Mode Sombre par défaut */
+/* 1. Thème Sombre */
 body.theme-dark,
 body.theme-linear {
   background-color: #090a0f;
@@ -24,32 +27,28 @@ body.theme-linear {
   background-attachment: fixed;
 }
 
-/* 2. Mode Galerie d'Art / Mur Minéral (comme sur tes captures) */
+/* 2. Thème Galerie : Véritable enduit à la chaux noble, sans motif répétitif */
 body.theme-gallery,
 body.theme-light {
-  /* Teinte de base : pierre calcaire / chaux chaleureuse */
-  background-color: #ede6dc;
-  color: #1c1917;
-
-  /* Superposition de couches :
-     1. Un dégradé masque très doux à droite (effet voute / fresque floue)
-     2. Un grain minéral subtil pour enlever tout aspect plastique
-     3. La texture de fresque architecturale fondue en filigrane à droite */
-  background-image:
-    /* Voile de lumière chaleureux qui vient de gauche */
-    radial-gradient(circle at 10% 20%, rgba(255, 252, 247, 0.7) 0%, transparent 60%),
-    /* Fondu progressif vers la fresque à droite */
-    linear-gradient(to right, #ede6dc 0%, #ede6dc 55%, rgba(237, 230, 220, 0.45) 85%, rgba(237, 230, 220, 0.85) 100%),
-    /* Fresque / voûte ancienne floutée et texturée sur le tiers droit */
-    radial-gradient(ellipse at 88% 30%, rgba(180, 150, 115, 0.35) 0%, transparent 50%),
-    /* Micro-grain minéral de chaux */
-    repeating-radial-gradient(circle at 50% 50%, transparent 0, rgba(120, 95, 70, 0.025) 1px, transparent 2px);
+  background-color: #ede2d3;
+  color: #2b2118;
   
-  background-attachment: fixed;
+  /* Superposition sans répétition :
+     1. Lumière rasante naturelle venant du coin haut-gauche
+     2. Ombres douces d'aspérités d'enduit en bas à droite
+     3. Texture fractale continue étirée sur tout l'écran (zéro effet carrelage) */
+  background-image:
+    radial-gradient(ellipse at 15% 10%, rgba(255, 253, 249, 0.8) 0%, transparent 60%),
+    radial-gradient(ellipse at 85% 90%, rgba(196, 178, 158, 0.45) 0%, transparent 70%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 1600 1200' preserveAspectRatio='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='finePlaster'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.008 0.006' numOctaves='6' result='waves'/%3E%3CfeDiffuseLighting in='waves' lighting-color='%23fffaf2' surfaceScale='1.4' result='light'%3E%3CfeDistantLight azimuth='50' elevation='60'/%3E%3C/feDiffuseLighting%3E%3CfeBlend mode='multiply' in='SourceGraphic' in2='light'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23finePlaster)' fill='%23ded2c1' opacity='0.35'/%3E%3C/svg%3E");
+  
   background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
-/* 3. Mode Accessibilité / Daltonien */
+/* 3. Thème Daltonien */
 body.theme-accessible {
   background-color: #000000;
   color: #ffffff;
