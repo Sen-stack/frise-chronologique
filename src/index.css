@@ -9,9 +9,12 @@ html, body, #root {
   padding: 0;
   overflow: hidden;
   user-select: none;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 1. THÈME LINEAR : Fond nuit abyssale avec lueur violette haute */
+/* 1. THÈME LINEAR SOMBRE */
 body.theme-linear {
   background-color: #06070a;
   color: #f8fafc;
@@ -23,14 +26,12 @@ body.theme-linear {
   background-attachment: fixed;
 }
 
-/* 2. THÈME CLAIR : Fort dégradé temporel de gauche à droite */
+/* 2. THÈME CLAIR : Dégradé temporel minéral */
 body.theme-gallery {
   background-color: #e5dfd5;
   color: #0f172a;
   background-image: 
-    /* Dégradé marqué : Ardoise minérale foncée (passé lointain) -> Albâtre lumineux (époque contemporaine) */
     linear-gradient(to right, #8c8273 0%, #b8af9f 25%, #ded8cc 55%, #f5f3ec 85%, #ffffff 100%),
-    /* Micro-grain de fresque */
     repeating-radial-gradient(circle at 50% 50%, transparent 0, rgba(20, 15, 10, 0.03) 1px, transparent 3px);
   background-size: 100% 100%, 4px 4px;
   background-attachment: fixed;

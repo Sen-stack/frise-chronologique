@@ -28,13 +28,14 @@ export default function TimelineCanvas() {
 
   const [viewRange, setViewRange] = useState({ min: -1000, max: 2026 });
   const [currentTheme, setCurrentTheme] = useState(() => {
-  return localStorage.getItem('chronos_theme') || 'dark';
-	});
+    return localStorage.getItem('chronos_theme') || 'dark';
+  });
 
-	useEffect(() => {
-	  document.body.className = THEMES[currentTheme]?.bgClass || 'theme-dark';
-	  localStorage.setItem('chronos_theme', currentTheme);
-	}, [currentTheme]);
+  useEffect(() => {
+    document.body.className = THEMES[currentTheme]?.bgClass || 'theme-dark';
+    localStorage.setItem('chronos_theme', currentTheme);
+  }, [currentTheme]);
+
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState([]);
@@ -50,8 +51,9 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Mode Split View (Approfondissement)
+  // Mode Split View indépendant
   const [isSplitViewOpen, setIsSplitViewOpen] = useState(false);
+  const [splitEvent, setSplitEvent] = useState(null);
 
   // Formulaire d'ajout / modification
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -86,6 +88,7 @@ export default function TimelineCanvas() {
   }, [filterMode, selectedTags, customSelectedIds]);
 
   const hitboxesRef = useRef([]);
+
   const yearToMiniX = (year, width) => {
     const clamped = Math.max(GLOBAL_MIN, Math.min(GLOBAL_MAX, year));
     const usableW = width - 2 * MINI_PAD;
@@ -114,9 +117,9 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
-  // Dessin de la scène (Canvas)
+  // Dessin de la scène (Canvas) avec gestion des thèmes
   const drawScene = () => {
-	const th = THEMES[currentTheme]?.canvas || THEMES.dark.canvas;
+    const th = THEMES[currentTheme]?.canvas || THEMES.dark.canvas;
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
     if (!cMain || !cMini) return;
@@ -149,7 +152,7 @@ export default function TimelineCanvas() {
     const barWidth = Math.max(0, visibleBarX2 - visibleBarX1);
 
     ctx.save();
-    // 1. Double volume / ombre portée douce
+    // 1. Double volume / ombre portée minérale
     ctx.shadowColor = currentTheme === 'light' ? 'rgba(74, 50, 30, 0.28)' : 'rgba(0, 0, 0, 0.6)';
     ctx.shadowBlur = 16;
     ctx.shadowOffsetY = 6;
@@ -224,7 +227,7 @@ export default function TimelineCanvas() {
       const trackHeight = (BAR_HEIGHT - 6) / 2;
       const trackY = (idx % 2 === 0) ? barTop + 3 : barTop + 3 + trackHeight;
 
-      const isSelected = selectedEvent && selectedEvent.id === p.id;
+      const isSelected = (selectedEvent && selectedEvent.id === p.id) || (splitEvent && splitEvent.id === p.id);
 
       ctx.fillStyle = isSelected ? style.stroke : style.fill;
       ctx.fillRect(rX, trackY, rW, trackHeight);
@@ -258,7 +261,7 @@ export default function TimelineCanvas() {
       const yT = barTop - decalageY;
 
       const style = getItemStyle(evt);
-      const isSelected = selectedEvent && selectedEvent.id === evt.id;
+      const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
 
       ctx.strokeStyle = isSelected ? '#ffffff' : style.stroke;
       ctx.lineWidth = isSelected ? 2 : 1.5;
@@ -393,10 +396,10 @@ export default function TimelineCanvas() {
   }, [isSplitViewOpen]);
 
   useEffect(() => {
-  drawScene();
-	}, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, isSplitViewOpen, currentTheme]);
+    drawScene();
+  }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
 
-  // Gestion des interactions de navigation (drag & zoom)
+  // Interactions (drag & zoom)
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -441,6 +444,7 @@ export default function TimelineCanvas() {
       }
     };
 
+    // Clic : clic dans le vide ne ferme PAS le split, clic sur un autre événement le met à jour
     const onMainClick = (e) => {
       const rect = cMain.getBoundingClientRect();
       const cx = e.clientX - rect.left;
@@ -460,7 +464,11 @@ export default function TimelineCanvas() {
         const targetX = hit.type === 'rect' ? hit.x + hit.w / 2 : hit.x;
         const targetY = hit.y;
         setPopupPos({ x: targetX, y: targetY });
+
+        // Si le volet est déjà ouvert, on bascule directement sur le nouvel événement
+        setSplitEvent(prev => (prev ? hit.evt : null));
       } else {
+        // Clic dans le vide : on masque seulement la bulle volante
         setSelectedEvent(null);
       }
     };
@@ -546,7 +554,6 @@ export default function TimelineCanvas() {
     };
   }, []);
 
-  // Ouverture modale d'ajout
   const handleOpenCreateModal = () => {
     setEditingEventId(null);
     setFormError('');
@@ -568,7 +575,6 @@ export default function TimelineCanvas() {
     setIsModalOpen(true);
   };
 
-  // Ouverture modale d'édition
   const handleOpenEditModal = (evt) => {
     if (!evt) return;
     setEditingEventId(evt.id);
@@ -590,7 +596,6 @@ export default function TimelineCanvas() {
     const itemTags = Array.isArray(evt.tags) && evt.tags.length > 0 ? evt.tags : [evt.categorie || "Général"];
     const style = getItemStyle(evt);
 
-    // Récupération des cartes historiques existantes (format tableau ou rétro-compatibilité)
     let cartesList = [];
     if (Array.isArray(evt.cartes_historiques)) {
       cartesList = evt.cartes_historiques;
@@ -615,7 +620,19 @@ export default function TimelineCanvas() {
     setIsModalOpen(true);
   };
 
-  // Suppression
+  const handleOpenSplit = (evt) => {
+    const target = evt || selectedEvent;
+    if (!target) return;
+    setSplitEvent(target);
+    setIsSplitViewOpen(true);
+    setSelectedEvent(null);
+  };
+
+  const handleCloseSplit = () => {
+    setIsSplitViewOpen(false);
+    setSplitEvent(null);
+  };
+
   const handleDeleteEvent = async (evt) => {
     if (!evt) return;
     const confirmDelete = window.confirm(`Voulez-vous vraiment supprimer "${evt.titre}" ?`);
@@ -627,7 +644,9 @@ export default function TimelineCanvas() {
     } else {
       setEvents(prev => prev.filter(e => e.id !== evt.id));
       setSelectedEvent(null);
-      if (isSplitViewOpen) setIsSplitViewOpen(false);
+      if (splitEvent && splitEvent.id === evt.id) {
+        handleCloseSplit();
+      }
     }
   };
 
@@ -655,7 +674,6 @@ export default function TimelineCanvas() {
     });
   };
 
-  // Enregistrement (Création ou Mise à jour)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -689,8 +707,6 @@ export default function TimelineCanvas() {
     setIsSubmitting(true);
     const calculatedPeriod = getAutoPeriod(calculatedStart);
     const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
-
-    // Rétro-compatibilité : on conserve aussi carte_historique_url de la 1ère carte
     const premiereCarte = formData.cartesHistoriques?.[0];
 
     const payload = {
@@ -725,6 +741,9 @@ export default function TimelineCanvas() {
         const updated = data[0];
         setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
         setSelectedEvent(updated);
+        if (splitEvent && splitEvent.id === updated.id) {
+          setSplitEvent(updated);
+        }
         setIsModalOpen(false);
       }
     } else {
@@ -776,14 +795,16 @@ export default function TimelineCanvas() {
     e.titre.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const activeHeaderEvent = splitEvent || selectedEvent;
+
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none' }}>
       
       {/* 1. Volet supérieur (Knowledge Hub / Split View) */}
       <KnowledgeSplitView
         isOpen={isSplitViewOpen}
-        onClose={() => setIsSplitViewOpen(false)}
-        event={selectedEvent}
+        onClose={handleCloseSplit}
+        event={splitEvent}
       />
 
       {/* 2. Barre d'outils flottante */}
@@ -829,35 +850,36 @@ export default function TimelineCanvas() {
           <span>🏷️</span>
           <span>Filtres</span>
         </button>
-		{/* Sélecteur de thèmes */}
-<div style={{
-  display: 'flex',
-  gap: 3,
-  backgroundColor: 'rgba(2, 6, 23, 0.4)',
-  borderRadius: 20,
-  padding: 2,
-  border: '1px solid rgba(255, 255, 255, 0.08)'
-}}>
-  {Object.values(THEMES).map(t => (
-    <button
-      key={t.id}
-      type="button"
-      onClick={() => setCurrentTheme(t.id)}
-      title={`Thème : ${t.name}`}
-      style={{
-        padding: '4px 8px',
-        borderRadius: 16,
-        border: 'none',
-        cursor: 'pointer',
-        fontSize: 12,
-        backgroundColor: currentTheme === t.id ? '#0284c7' : 'transparent',
-        transition: 'background-color 0.15s ease'
-      }}
-    >
-      {t.icon}
-    </button>
-  ))}
-</div>
+
+        {/* Sélecteur de thèmes (Sombre, Clair, Daltonien) */}
+        <div style={{
+          display: 'flex',
+          gap: 3,
+          backgroundColor: 'rgba(2, 6, 23, 0.4)',
+          borderRadius: 20,
+          padding: 2,
+          border: '1px solid rgba(255, 255, 255, 0.08)'
+        }}>
+          {Object.values(THEMES).map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setCurrentTheme(t.id)}
+              title={`Thème : ${t.name}`}
+              style={{
+                padding: '4px 8px',
+                borderRadius: 16,
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 12,
+                backgroundColor: currentTheme === t.id ? '#0284c7' : 'transparent',
+                transition: 'background-color 0.15s ease'
+              }}
+            >
+              {t.icon}
+            </button>
+          ))}
+        </div>
 
         <button
           onClick={handleOpenCreateModal}
@@ -880,10 +902,16 @@ export default function TimelineCanvas() {
           <span>Ajouter</span>
         </button>
 
-        {selectedEvent && (
+        {activeHeaderEvent && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid #334155' }}>
             <button
-              onClick={() => setIsSplitViewOpen(!isSplitViewOpen)}
+              onClick={() => {
+                if (isSplitViewOpen) {
+                  handleCloseSplit();
+                } else {
+                  handleOpenSplit(selectedEvent);
+                }
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -903,7 +931,7 @@ export default function TimelineCanvas() {
             </button>
 
             <button
-              onClick={() => handleOpenEditModal(selectedEvent)}
+              onClick={() => handleOpenEditModal(activeHeaderEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -923,7 +951,7 @@ export default function TimelineCanvas() {
             </button>
 
             <button
-              onClick={() => handleDeleteEvent(selectedEvent)}
+              onClick={() => handleDeleteEvent(activeHeaderEvent)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -979,7 +1007,7 @@ export default function TimelineCanvas() {
         onClose={() => setSelectedEvent(null)}
         onEdit={handleOpenEditModal}
         onDelete={handleDeleteEvent}
-        onDeepDive={() => setIsSplitViewOpen(true)}
+        onDeepDive={() => handleOpenSplit(selectedEvent)}
       />
 
       {/* 5. Modale de saisie / modification */}
