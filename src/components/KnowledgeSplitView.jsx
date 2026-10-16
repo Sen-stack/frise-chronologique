@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../supabase.js';
 import WikimediaPickerModal from './WikimediaPickerModal.jsx';
+import CityPicker from './CityPicker.jsx';
 
 const defaultIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -15,14 +16,18 @@ const defaultIcon = L.icon({
   shadowSize: [41, 41]
 });
 
-function MapResizer() {
+// Forcer Leaflet à recalculer sa taille d'affichage et centrer sur la position
+function MapController({ center, zoom }) {
   const map = useMap();
   useEffect(() => {
     const timer = setTimeout(() => {
       map.invalidateSize();
+      if (center) {
+        map.setView(center, zoom);
+      }
     }, 150);
     return () => clearTimeout(timer);
-  }, [map]);
+  }, [map, center, zoom]);
   return null;
 }
 
@@ -37,6 +42,9 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
   const [previewCard, setPreviewCard] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // Géolocalisation Leaflet
+  const [coords, setCoords] = useState({ latitude: null, longitude: null });
 
   // Modale Wikimedia et saisie libre de lien
   const [isWikiPickerOpen, setIsWikiPickerOpen] = useState(false);
@@ -63,19 +71,26 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       }
       setCartes(cartesList);
       setActiveTab(cartesList.length > 0 ? 'archives' : 'moderne');
+
+      // Chargement des coordonnées existantes
+      setCoords({
+        latitude: event.latitude !== null && event.latitude !== undefined ? Number(event.latitude) : null,
+        longitude: event.longitude !== null && event.longitude !== undefined ? Number(event.longitude) : null
+      });
+
       setSaveMessage('');
     }
   }, [event]);
 
-  const hasCoords = event.latitude !== null && event.latitude !== undefined && event.longitude !== null && event.longitude !== undefined && !isNaN(event.latitude);
-  const position = hasCoords ? [Number(event.latitude), Number(event.longitude)] : [41.9028, 12.4964];
-  const zoom = Number(event.zoom_niveau) || 6;
+  const hasCoords = coords.latitude !== null && coords.longitude !== null && !isNaN(coords.latitude);
+  const position = hasCoords ? [coords.latitude, coords.longitude] : [41.9028, 12.4964];
+  const zoom = Number(event.zoom_niveau) || (hasCoords ? 7 : 4);
 
   const anneeAffichee = event.date_debut < 0
     ? `${Math.abs(event.date_debut)} BCE`
     : `${event.date_debut} CE`;
 
-  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description) => {
+  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description, updatedCoords = coords) => {
     setIsSaving(true);
     setSaveMessage('');
 
@@ -84,7 +99,9 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       references_bento: updatedBlocs,
       cartes_historiques: updatedCartes,
       carte_historique_url: updatedCartes[0]?.url || null,
-      carte_legende: updatedCartes[0]?.titre || null
+      carte_legende: updatedCartes[0]?.titre || null,
+      latitude: updatedCoords.latitude,
+      longitude: updatedCoords.longitude
     };
 
     const { error } = await supabase
@@ -102,8 +119,20 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       event.cartes_historiques = payload.cartes_historiques;
       event.carte_historique_url = payload.carte_historique_url;
       event.carte_legende = payload.carte_legende;
+      event.latitude = payload.latitude;
+      event.longitude = payload.longitude;
       setTimeout(() => setSaveMessage(''), 2000);
     }
+  };
+
+  // Mise à jour de la ville depuis le CityPicker
+  const handleLocationSelect = ({ latitude, longitude }) => {
+    const nextCoords = {
+      latitude: latitude !== null ? Number(latitude) : null,
+      longitude: longitude !== null ? Number(longitude) : null
+    };
+    setCoords(nextCoords);
+    handleSave(blocs, cartes, description, nextCoords);
   };
 
   // Réception de l'image sélectionnée dans la modale Wikimedia
@@ -111,7 +140,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     const nextList = [...cartes, nouvelleCarte];
     setCartes(nextList);
     setActiveTab('archives');
-    handleSave(blocs, nextList, description);
+    handleSave(blocs, nextList, description, coords);
   };
 
   // Ajout par URL manuelle
@@ -129,13 +158,13 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     setDirectCardTitre('');
     setIsAddingDirectUrl(false);
     setActiveTab('archives');
-    handleSave(blocs, nextList, description);
+    handleSave(blocs, nextList, description, coords);
   };
 
   const handleRemoveCard = (index) => {
     const nextList = cartes.filter((_, i) => i !== index);
     setCartes(nextList);
-    handleSave(blocs, nextList, description);
+    handleSave(blocs, nextList, description, coords);
   };
 
   // Ajout / Suppression de bloc libre
@@ -152,13 +181,13 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     setBlocs(nextBlocs);
     setNewBlockType(null);
     setNewBlockContent({ titre: '', url: '', texte: '' });
-    handleSave(nextBlocs, cartes, description);
+    handleSave(nextBlocs, cartes, description, coords);
   };
 
   const handleRemoveBlock = (blockId) => {
     const nextBlocs = blocs.filter(b => b.id !== blockId);
     setBlocs(nextBlocs);
-    handleSave(nextBlocs, cartes, description);
+    handleSave(nextBlocs, cartes, description, coords);
   };
 
   return (
@@ -248,7 +277,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
           </div>
         </div>
 
-        {/* Corps : Gauche (Documents) / Droite (Blocs libres) */}
+        {/* Corps : Gauche (Documents & Cartes) / Droite (Blocs libres) */}
         <div
           style={{
             flex: 1,
@@ -273,7 +302,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               flexDirection: 'column'
             }}
           >
-            {/* Barre d'outils et onglets */}
+            {/* Barre d'onglets */}
             <div
               style={{
                 display: 'flex',
@@ -339,7 +368,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                       cursor: 'pointer'
                     }}
                   >
-                    🏛️ Chercher sur Wikimedia
+                    Chercher sur Wikimedia
                   </button>
 
                   <button
@@ -362,7 +391,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               )}
             </div>
 
-            {/* Formulaire optionnel d'ajout manuel par URL */}
+            {/* Formulaire manuel d'URL */}
             {isAddingDirectUrl && (
               <form
                 onSubmit={handleAddDirectUrlSubmit}
@@ -400,7 +429,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               </form>
             )}
 
-            {/* VUE 1 : DOCUMENTS D'ARCHIVES EN GRILLE STYLE PINTEREST */}
+            {/* VUE 1 : DOCUMENTS D'ARCHIVES */}
             {activeTab === 'archives' && (
               <div
                 style={{
@@ -428,7 +457,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                         cursor: 'pointer'
                       }}
                     >
-                      🏛️ Ouvrir la recherche Wikimedia Commons
+                      Ouvrir la recherche Wikimedia Commons
                     </button>
                   </div>
                 ) : cartes.length === 1 ? (
@@ -497,15 +526,39 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               </div>
             )}
 
-            {/* VUE 2 : CARTE MODERNE */}
+            {/* VUE 2 : CARTE MODERNE + SÉLECTEUR DE VILLES FLOTTANT */}
             {activeTab === 'moderne' && (
               <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
+                
+                {/* Sélecteur de ville positionné en haut de la carte */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    left: 10,
+                    right: 10,
+                    zIndex: 1000,
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(8px)',
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid #e7ded0',
+                    boxShadow: '0 4px 12px rgba(44, 34, 22, 0.1)'
+                  }}
+                >
+                  <CityPicker
+                    latitude={coords.latitude}
+                    longitude={coords.longitude}
+                    onLocationSelect={handleLocationSelect}
+                  />
+                </div>
+
                 <MapContainer
                   center={position}
                   zoom={zoom}
                   style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
                 >
-                  <MapResizer />
+                  <MapController center={position} zoom={zoom} />
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
