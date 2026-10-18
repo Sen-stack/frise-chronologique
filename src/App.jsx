@@ -15,28 +15,7 @@ function App() {
         <TestScene3D onClose={() => setShow3DPoC(false)} />
       )}
 
-      {/* 3. Le bouton en bas à gauche pour tester */}
-      <button
-        type="button"
-        onClick={() => setShow3DPoC(true)}
-        style={{
-          position: 'fixed',
-          bottom: 20,
-          left: 20,
-          zIndex: 9000,
-          backgroundColor: '#0f172a',
-          color: '#38bdf8',
-          border: '1px solid #0284c7',
-          padding: '8px 14px',
-          borderRadius: 8,
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          fontSize: 12,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
-        }}
-      >
-        🧊 Tester le Vrai Marbre 3D
-      </button>
+      
     </div>
   );
 }
