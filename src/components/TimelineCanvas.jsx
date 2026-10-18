@@ -27,7 +27,7 @@ export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
   const canvasMiniRef = useRef(null);
 
-  const [viewRange, setViewRange] = useState({ min: 800, max: 1500 });
+  const [viewRange, setViewRange] = useState({ min: -1000, max: 2026 });
   const [currentTheme, setCurrentTheme] = useState(() => {
     return localStorage.getItem('chronos_theme') || 'light';
   });
@@ -79,8 +79,37 @@ export default function TimelineCanvas() {
   const viewRef = useRef(viewRange);
   useEffect(() => { viewRef.current = viewRange; }, [viewRange]);
 
-  const targetViewRef = useRef({ min: 800, max: 1500 });
+  const targetViewRef = useRef({ min: -1000, max: 2026 });
   const animFrameRef = useRef(null);
+  const textureShiftRef = useRef(0);
+  const stonePatternRef = useRef(null);
+
+  // Texture minérale ardoise satinée
+  useEffect(() => {
+    const stoneNoise = document.createElement('canvas');
+    stoneNoise.width = 600;
+    stoneNoise.height = 300;
+    const nctx = stoneNoise.getContext('2d');
+
+    nctx.fillStyle = '#333842';
+    nctx.fillRect(0, 0, 600, 300);
+
+    for (let i = 0; i < 20000; i++) {
+      const gx = Math.random() * 600;
+      const gy = Math.random() * 300;
+      const isLight = Math.random() < 0.48;
+      nctx.fillStyle = isLight
+        ? `rgba(255, 255, 255, ${0.04 + Math.random() * 0.08})`
+        : `rgba(0, 0, 0, ${0.06 + Math.random() * 0.10})`;
+      nctx.fillRect(gx, gy, 1, 1);
+    }
+
+    const cMain = canvasMainRef.current;
+    if (cMain) {
+      const ctx = cMain.getContext('2d');
+      stonePatternRef.current = ctx.createPattern(stoneNoise, 'repeat');
+    }
+  }, []);
 
   const updateInertia = () => {
     const cur = viewRef.current;
@@ -90,8 +119,8 @@ export default function TimelineCanvas() {
     const diffMax = tgt.max - cur.max;
 
     if (Math.abs(diffMin) > 0.05 || Math.abs(diffMax) > 0.05) {
-      const nextMin = cur.min + diffMin * 0.22;
-      const nextMax = cur.max + diffMax * 0.22;
+      const nextMin = cur.min + diffMin * 0.18;
+      const nextMax = cur.max + diffMax * 0.18;
       setViewRange({ min: nextMin, max: nextMax });
       animFrameRef.current = requestAnimationFrame(updateInertia);
     } else {
@@ -100,8 +129,11 @@ export default function TimelineCanvas() {
     }
   };
 
-  const smoothSetView = (nextTgt) => {
+  const smoothSetView = (nextTgt, deltaX = 0) => {
     targetViewRef.current = nextTgt;
+    if (deltaX !== 0) {
+      textureShiftRef.current += deltaX;
+    }
     if (!animFrameRef.current) {
       animFrameRef.current = requestAnimationFrame(updateInertia);
     }
@@ -145,6 +177,32 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
+  // Moteur de gravité dynamique des périodes
+  const computeGravityTracks = (periodesList) => {
+    const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - b.date_fin));
+    const occupiedTop = [];
+    const occupiedBottom = [];
+
+    return sorted.map((p, idx) => {
+      const side = (idx % 2 === 0) ? 'top' : 'bottom';
+      const occupied = side === 'top' ? occupiedTop : occupiedBottom;
+
+      let level = 0;
+      let dropYear = null;
+
+      while (occupied[level] && occupied[level] > p.date_debut) {
+        level++;
+      }
+
+      if (level > 0 && occupied[level - 1] && occupied[level - 1] < p.date_fin) {
+        dropYear = occupied[level - 1];
+      }
+
+      occupied[level] = p.date_fin;
+      return { ...p, side, level, dropYear };
+    });
+  };
+
   const drawScene = () => {
     const th = THEMES[currentTheme]?.canvas || THEMES.light.canvas;
     const cMain = canvasMainRef.current;
@@ -168,62 +226,13 @@ export default function TimelineCanvas() {
     hitboxesRef.current = [];
 
     const isMobile = w < 640;
-    const barY = h * (isMobile ? 0.70 : 0.62);
-    const barTop = barY - BAR_HEIGHT / 2;
-    const barBottom = barY + BAR_HEIGHT / 2;
+    const barY = h * (isMobile ? 0.70 : 0.58);
+    const trackH = 18;
+    const basePadding = 4;
+    const defaultHalfH = 26; // Épaisseur régulière et constante de la frise
 
     const xStart = yearToX(GLOBAL_MIN);
     const xEnd = yearToX(GLOBAL_MAX);
-
-    const visibleBarX1 = Math.max(-50, xStart);
-    const visibleBarX2 = Math.min(w + 50, xEnd);
-    const barWidth = Math.max(0, visibleBarX2 - visibleBarX1);
-
-    ctx.save();
-    ctx.shadowColor = currentTheme === 'light' ? 'rgba(74, 50, 30, 0.22)' : 'rgba(0, 0, 0, 0.6)';
-    ctx.shadowBlur = 16;
-    ctx.shadowOffsetY = 6;
-    ctx.shadowOffsetX = 0;
-
-    ctx.fillStyle = th.axisBg;
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(visibleBarX1, barTop, barWidth, BAR_HEIGHT, 14);
-    } else {
-      ctx.rect(visibleBarX1, barTop, barWidth, BAR_HEIGHT);
-    }
-    ctx.fill();
-
-    ctx.shadowColor = 'transparent';
-    ctx.strokeStyle = currentTheme === 'light' ? 'rgba(255, 255, 255, 0.5)' : th.axisBorder;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.strokeStyle = th.axisLine;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(visibleBarX1, barY);
-    ctx.lineTo(visibleBarX2, barY);
-    ctx.stroke();
-
-    const interval = getTickInterval(span);
-    const firstTick = Math.ceil(vMin / interval) * interval;
-    ctx.fillStyle = th.tickText;
-    ctx.font = isMobile ? '10px sans-serif' : '11px sans-serif';
-    ctx.textAlign = 'center';
-
-    for (let t = firstTick; t <= vMax; t += interval) {
-      if (t < GLOBAL_MIN || t > GLOBAL_MAX) continue;
-      const tx = yearToX(t);
-      ctx.strokeStyle = th.ticks;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(tx, barBottom);
-      ctx.lineTo(tx, barBottom + 7);
-      ctx.stroke();
-      ctx.fillText(formatYear(t), tx, barBottom + (isMobile ? 16 : 20));
-    }
 
     const allEvents = eventsRef.current || [];
     const activeFilter = filterRef.current;
@@ -236,10 +245,74 @@ export default function TimelineCanvas() {
       return itemTags.some(tag => activeFilter.tags.includes(tag));
     });
 
-    const periodes = filteredList.filter(e => e.date_fin !== null && e.date_fin !== undefined && e.date_fin !== '');
+    const rawPeriodes = filteredList.filter(e => e.date_fin !== null && e.date_fin !== undefined && e.date_fin !== '');
     const ponctuels = filteredList.filter(e => !e.date_fin);
 
-    periodes.forEach((p, idx) => {
+    const gravityPeriodes = computeGravityTracks(rawPeriodes);
+
+    // 1. TRACÉ DU CORPS DE LA FRISE DROITE ET SYMÉTRIQUE
+    const visibleX1 = Math.max(-60, xStart);
+    const visibleX2 = Math.min(w + 60, xEnd);
+    const visibleW = Math.max(0, visibleX2 - visibleX1);
+
+    if (visibleW > 0) {
+      const topY = barY - defaultHalfH;
+      const botY = barY + defaultHalfH;
+      const totalH = defaultHalfH * 2;
+
+      ctx.save();
+      ctx.shadowColor = currentTheme === 'light' ? 'rgba(15, 23, 42, 0.12)' : 'rgba(0, 0, 0, 0.55)';
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetY = 6;
+      ctx.fillStyle = '#2d323b';
+
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(visibleX1, topY, visibleW, totalH, 8);
+      } else {
+        ctx.rect(visibleX1, topY, visibleW, totalH);
+      }
+      ctx.fill();
+      ctx.restore();
+
+      // Matière minérale coupée dans le rectangle
+      ctx.save();
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(visibleX1, topY, visibleW, totalH, 8);
+      } else {
+        ctx.rect(visibleX1, topY, visibleW, totalH);
+      }
+      ctx.clip();
+
+      if (stonePatternRef.current) {
+        if (ctx.setTransform && stonePatternRef.current.setTransform) {
+          const matrix = new DOMMatrix().translate(textureShiftRef.current % 600, 0);
+          stonePatternRef.current.setTransform(matrix);
+        }
+        ctx.fillStyle = stonePatternRef.current;
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#333842';
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+
+      // Axe médian interne
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(visibleX1, barY);
+      ctx.lineTo(visibleX2, barY);
+      ctx.stroke();
+    }
+
+    // 2. TRACÉ DES PÉRIODES AVEC GRAVITÉ DYNAMIQUE & TRANSITION EN S
+    gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
       const rX = Math.min(x1, x2);
@@ -248,91 +321,235 @@ export default function TimelineCanvas() {
       if (rX + rW < -100 || rX > w + 100) return;
 
       const style = getItemStyle(p);
-      const trackHeight = (BAR_HEIGHT - 6) / 2;
-      const trackY = (idx % 2 === 0) ? barTop + 3 : barTop + 3 + trackHeight;
-
       const isSelected = (selectedEvent && selectedEvent.id === p.id) || (splitEvent && splitEvent.id === p.id);
+      const isTop = p.side === 'top';
+      const dir = isTop ? -1 : 1;
+      const transitionW = 35;
 
+      ctx.save();
       ctx.fillStyle = isSelected ? style.stroke : style.fill;
-      ctx.fillRect(rX, trackY, rW, trackHeight);
       ctx.strokeStyle = isSelected ? '#ffffff' : style.stroke;
-      ctx.lineWidth = isSelected ? 2 : 1.5;
-      ctx.strokeRect(rX, trackY, rW, trackHeight);
+      ctx.lineWidth = isSelected ? 2 : 1.2;
 
+      // Cas avec transition descendante vers l'axe médian (en S)
+      if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin) {
+        const xSplit = yearToX(p.dropYear);
+        const xTransEnd = Math.min(rX + rW, xSplit + transitionW);
+
+        const yL0 = barY + dir * basePadding;
+        const yL1 = barY + dir * (basePadding + trackH + 3);
+
+        ctx.beginPath();
+        ctx.moveTo(rX + 4, yL1 + dir * trackH);
+        ctx.lineTo(xSplit, yL1 + dir * trackH);
+        ctx.bezierCurveTo(
+          xSplit + transitionW * 0.5, yL1 + dir * trackH,
+          xSplit + transitionW * 0.5, yL0 + dir * trackH,
+          xTransEnd, yL0 + dir * trackH
+        );
+        ctx.lineTo(rX + rW - 4, yL0 + dir * trackH);
+        ctx.arcTo(rX + rW, yL0 + dir * trackH, rX + rW, yL0, 4);
+        ctx.arcTo(rX + rW, yL0, rX + rW - 4, yL0, 4);
+
+        ctx.lineTo(xTransEnd, yL0);
+        ctx.bezierCurveTo(
+          xSplit + transitionW * 0.5, yL0,
+          xSplit + transitionW * 0.5, yL1,
+          xSplit, yL1
+        );
+        ctx.lineTo(rX + 4, yL1);
+        ctx.arcTo(rX, yL1, rX, yL1 + dir * trackH, 4);
+        ctx.arcTo(rX, yL1 + dir * trackH, rX + 4, yL1 + dir * trackH, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        hitboxesRef.current.push({
+          type: 'rect',
+          x: rX,
+          y: Math.min(yL0, yL1 + dir * trackH),
+          w: rW,
+          h: Math.abs(yL1 - yL0) + trackH,
+          evt: p
+        });
+      } else {
+        // Cas standard : bande rectangulaire
+        const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
+        const yTop = isTop ? yBase - trackH : yBase;
+
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(rX, yTop, rW, trackH, 4);
+        } else {
+          ctx.rect(rX, yTop, rW, trackH);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        hitboxesRef.current.push({ type: 'rect', x: rX, y: yTop, w: rW, h: trackH, evt: p });
+      }
+
+      // Titre gravé sur la période
       if (rW > 35) {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(rX + 2, trackY, rW - 4, trackHeight);
+        ctx.rect(rX + 2, barY - defaultHalfH, rW - 4, defaultHalfH * 2);
         ctx.clip();
-        ctx.fillStyle = isSelected ? '#020617' : '#ffffff';
-        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 10px system-ui, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(p.titre, rX + 6, trackY + trackHeight / 2);
+        const labelY = isTop ? barY - basePadding - trackH / 2 : barY + basePadding + trackH / 2;
+        ctx.fillText(p.titre, rX + 6, labelY);
         ctx.restore();
       }
-
-      hitboxesRef.current.push({ type: 'rect', x: rX, y: trackY, w: rW, h: trackHeight, evt: p });
+      ctx.restore();
     });
 
-    ponctuels.forEach((evt, index) => {
+    // 3. GRADUATIONS DE DATES EN BAS
+    const interval = getTickInterval(span);
+    const firstTick = Math.ceil(vMin / interval) * interval;
+    ctx.fillStyle = currentTheme === 'light' ? '#52525b' : th.tickText;
+    ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
+    ctx.textAlign = 'center';
+
+    for (let t = firstTick; t <= vMax; t += interval) {
+      if (t < GLOBAL_MIN || t > GLOBAL_MAX) continue;
+      const tx = yearToX(t);
+      ctx.strokeStyle = currentTheme === 'light' ? 'rgba(113, 113, 122, 0.4)' : th.ticks;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tx, barY + defaultHalfH);
+      ctx.lineTo(tx, barY + defaultHalfH + 6);
+      ctx.stroke();
+      ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
+    }
+
+    // 4. JALONS PONCTUELS ÉPURÉS (AIGUILLES MINIMALISTES)
+    // 4. JALONS PONCTUELS ÉPURÉS (ANTI-COLLISION & HAUTEURS DYNAMIQUES SÉCURISÉES)
+    let minImportanceForText = 1;
+    if (span > 5000) minImportanceForText = 4;
+    else if (span > 800) minImportanceForText = 3;
+    else if (span > 250) minImportanceForText = 2;
+
+    const pinTracks = [];
+    const sortedPonctuels = [...ponctuels].sort((a, b) => a.date_debut - b.date_debut);
+
+    sortedPonctuels.forEach((evt) => {
       const x = yearToX(evt.date_debut);
       if (x < -200 || x > w + 200) return;
 
       const titreTexte = String(evt.titre || 'Sans titre');
-      const decalageY = (isMobile ? 26 : 38) + (index % 3) * (isMobile ? 24 : 32);
-      const yT = barTop - decalageY;
-
       const style = getItemStyle(evt);
+      
+      // isSelected calculé en premier
       const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
-      const pinColor = isSelected ? '#b45309' : (evt.couleur || style.stroke || '#854d0e');
+      const shouldShowLabel = (evt.importance || 3) >= minImportanceForText || isSelected;
 
-      ctx.strokeStyle = pinColor;
+      // Mesure de l'encombrement horizontal
+      ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
+      const textWidth = ctx.measureText(titreTexte).width;
+      const labelW = shouldShowLabel ? textWidth + 30 : 16;
+
+      // Recherche de l'étage disponible pour éviter les chevauchements
+      let trackIndex = 0;
+      while (pinTracks[trackIndex] && pinTracks[trackIndex] > x - 8) {
+        trackIndex++;
+      }
+      pinTracks[trackIndex] = x + labelW;
+
+      // Hauteur de tige étagée (5 paliers)
+      const baseStem = isMobile ? 26 : 36;
+      const stepStem = isMobile ? 22 : 30;
+      const decalageY = baseStem + (trackIndex % 5) * stepStem;
+      const yT = (barY - defaultHalfH) - decalageY;
+
+      const pinColor = isSelected ? '#0284c7' : (evt.couleur || style.stroke || '#475569');
+
+      ctx.save();
+      // Tige
+      ctx.strokeStyle = isSelected ? pinColor : 'rgba(148, 163, 184, 0.65)';
       ctx.lineWidth = isSelected ? 1.5 : 1;
       ctx.beginPath();
-      ctx.moveTo(x, barTop);
+      ctx.moveTo(x, barY - defaultHalfH);
       ctx.lineTo(x, yT);
       ctx.stroke();
 
+      // Point d'accroche bas
       ctx.fillStyle = pinColor;
       ctx.beginPath();
-      ctx.arc(x, barTop, isSelected ? 4 : 3, 0, Math.PI * 2);
+      ctx.arc(x, barY - defaultHalfH, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
       ctx.fill();
 
+      // Pastille sommitale
       ctx.beginPath();
-      ctx.arc(x, yT, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
+      ctx.arc(x, yT, isSelected ? 4 : 3, 0, Math.PI * 2);
       ctx.fill();
 
-      const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
+      // Libellé (uniquement si visible)
+      if (shouldShowLabel) {
+        const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
 
-      ctx.save();
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'bottom';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
+        ctx.fillStyle = pinColor;
+        ctx.fillText(anneeStr, x + 8, yT - 1);
 
-      ctx.font = isMobile ? 'bold 10px system-ui, sans-serif' : 'bold 11px system-ui, sans-serif';
-      ctx.fillStyle = pinColor;
-      ctx.fillText(anneeStr, x + 6, yT - 1);
-
-      ctx.textBaseline = 'top';
-      ctx.font = isSelected
-        ? (isMobile ? 'bold 11px system-ui, sans-serif' : 'bold 12px system-ui, sans-serif')
-        : (isMobile ? '500 10px system-ui, sans-serif' : '500 11px system-ui, sans-serif');
-      ctx.fillStyle = currentTheme === 'light' ? '#2b2118' : '#f8fafc';
-      ctx.fillText(titreTexte, x + 6, yT + 1);
-
+        ctx.textBaseline = 'top';
+        ctx.font = isSelected
+          ? (isMobile ? '600 11px system-ui, sans-serif' : '600 12px system-ui, sans-serif')
+          : (isMobile ? '500 10px system-ui, sans-serif' : '500 11px system-ui, sans-serif');
+        ctx.fillStyle = currentTheme === 'light' ? '#18181b' : '#f8fafc';
+        ctx.fillText(titreTexte, x + 8, yT + 1);
+      }
       ctx.restore();
 
-      const textW = ctx.measureText(titreTexte).width;
+      // Hitbox
       hitboxesRef.current.push({
         type: 'rect',
-        x: x - 10,
+        x: x - 8,
         y: yT - 16,
-        w: textW + 28,
-        h: 38,
+        w: labelW,
+        h: 36,
         evt
       });
     });
 
+    // 5. BORNES EXTRÊMES (ORIGINE ET AUJOURD'HUI)
+    if (xStart >= -120 && xStart <= w + 120) {
+      ctx.save();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(xStart, barY - defaultHalfH - 12);
+      ctx.lineTo(xStart, barY + defaultHalfH + 12);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText("Origine (-4.5 Ga)", xStart - 8, barY);
+      ctx.restore();
+    }
+
+    if (xEnd >= -120 && xEnd <= w + 120) {
+      ctx.save();
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(xEnd, barY - defaultHalfH - 12);
+      ctx.lineTo(xEnd, barY + defaultHalfH + 12);
+      ctx.stroke();
+
+      ctx.fillStyle = '#10b981';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText("Présent (2026)", xEnd + 8, barY);
+      ctx.restore();
+    }
+
+    // 6. MINIMAP BASSE
     mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
 
@@ -374,7 +591,7 @@ export default function TimelineCanvas() {
     const right = Math.max(vx1, vx2);
     const bWidth = Math.max(10, right - left);
 
-    mctx.fillStyle = 'rgba(180, 83, 9, 0.28)';
+    mctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
     mctx.fillRect(left, 4, bWidth, 42);
     mctx.strokeStyle = th.viewportBorder;
     mctx.lineWidth = 2;
@@ -385,7 +602,7 @@ export default function TimelineCanvas() {
     mctx.fillRect(left + bWidth - 4, 6, 4, 38);
 
     mctx.fillStyle = '#94a3b8';
-    mctx.font = '9px sans-serif';
+    mctx.font = '9px monospace, sans-serif';
     mctx.textAlign = 'left';
     mctx.fillText("-4.5 Ga", MINI_PAD, 60);
     mctx.textAlign = 'right';
@@ -438,7 +655,7 @@ export default function TimelineCanvas() {
     drawScene();
   }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
 
-  // ÉCOUTEURS SOURIS + TACTILE SMARTPHONE
+  // Écouteurs souris et tactile
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -470,7 +687,7 @@ export default function TimelineCanvas() {
       const dx = e.clientX - dragStartX;
       const span = dragStartMax - dragStartMin;
       const shift = (dx / cMain.width) * span;
-      smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
+      smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift }, dx);
     };
 
     const onMainWheel = (e) => {
@@ -513,7 +730,7 @@ export default function TimelineCanvas() {
         const dx = e.touches[0].clientX - dragStartX;
         const span = dragStartMax - dragStartMin;
         const shift = (dx / cMain.width) * span;
-        smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
+        smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift }, dx);
       } else if (e.touches.length === 2 && touchStartDist) {
         const x1 = e.touches[0].clientX;
         const x2 = e.touches[1].clientX;
@@ -844,24 +1061,24 @@ export default function TimelineCanvas() {
             fontSize: 9,
             fontWeight: 700,
             textTransform: 'uppercase',
-            letterSpacing: '0.8px',
-            color: '#8c7e72'
+            letterSpacing: '1px',
+            color: '#71717a'
           }}
         >
           Période
         </span>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#2b2118', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
             {formatYear(viewRange.min)}
           </span>
-          <span style={{ fontSize: 12, color: '#b4a594' }}>—</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#2b2118', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 12, color: '#a1a1aa' }}>—</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
             {formatYear(viewRange.max)}
           </span>
         </div>
       </div>
 
-      {/* 3. Barre d'outils bien centrée avec le switch Jour / Nuit */}
+      {/* 3. Barre d'outils centrée */}
       <div style={{
         position: 'absolute',
         top: isSplitViewOpen ? 'calc(50% + 12px)' : 14,
@@ -872,22 +1089,22 @@ export default function TimelineCanvas() {
         alignItems: 'center',
         gap: 6,
         padding: '5px 8px',
-        backgroundColor: '#faf7f2',
-        border: '1px solid #e7ded0',
+        backgroundColor: currentTheme === 'light' ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(12px)',
+        border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
         borderRadius: 14,
-        boxShadow: '0 6px 20px rgba(44, 34, 22, 0.1)',
-        color: '#2b2118',
+        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.06)',
+        color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
         transition: 'top 0.25s ease'
       }}>
-        {/* Filtres */}
         <button
           type="button"
           onClick={() => setIsFilterOpen(!isFilterOpen)}
           style={{
             padding: '6px 12px',
-            backgroundColor: isFilterOpen ? '#e7ded0' : '#f3ece0',
-            color: '#2b2118',
-            border: '1px solid #e7ded0',
+            backgroundColor: isFilterOpen ? (currentTheme === 'light' ? '#e4e4e7' : '#334155') : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
+            color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
+            border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
             borderRadius: 8,
             fontSize: 11,
             fontWeight: 600,
@@ -897,15 +1114,14 @@ export default function TimelineCanvas() {
           Filtres
         </button>
 
-        {/* Bouton Thème Jour / Nuit */}
         <button
           type="button"
           onClick={() => setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
           style={{
             padding: '6px 10px',
-            backgroundColor: '#f3ece0',
-            color: '#574838',
-            border: '1px solid #e7ded0',
+            backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#1e293b',
+            color: currentTheme === 'light' ? '#52525b' : '#94a3b8',
+            border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
             borderRadius: 8,
             fontSize: 11,
             fontWeight: 600,
@@ -915,7 +1131,6 @@ export default function TimelineCanvas() {
           {currentTheme === 'light' ? 'Nuit' : 'Jour'}
         </button>
 
-        {/* Ajouter */}
         <button
           type="button"
           onClick={handleOpenCreateModal}
@@ -924,7 +1139,7 @@ export default function TimelineCanvas() {
             alignItems: 'center',
             gap: 4,
             padding: '6px 12px',
-            backgroundColor: '#b45309',
+            backgroundColor: '#0284c7',
             color: '#ffffff',
             border: 'none',
             borderRadius: 8,
@@ -937,9 +1152,8 @@ export default function TimelineCanvas() {
           <span>Ajouter</span>
         </button>
 
-        {/* Actions contextuelles */}
         {activeHeaderEvent && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 4, borderLeft: '1px solid #e7ded0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 4, borderLeft: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155' }}>
             <button
               type="button"
               onClick={() => {
@@ -948,9 +1162,9 @@ export default function TimelineCanvas() {
               }}
               style={{
                 padding: '6px 10px',
-                backgroundColor: isSplitViewOpen ? '#b45309' : '#f3ece0',
-                color: isSplitViewOpen ? '#ffffff' : '#b45309',
-                border: '1px solid #e7ded0',
+                backgroundColor: isSplitViewOpen ? '#0284c7' : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
+                color: isSplitViewOpen ? '#ffffff' : '#0284c7',
+                border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
                 borderRadius: 8,
                 fontSize: 11,
                 fontWeight: 600,
@@ -965,9 +1179,9 @@ export default function TimelineCanvas() {
               onClick={() => handleOpenEditDrawer(activeHeaderEvent)}
               style={{
                 padding: '6px 8px',
-                backgroundColor: '#f3ece0',
-                color: '#854d0e',
-                border: '1px solid #e7ded0',
+                backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#1e293b',
+                color: '#d97706',
+                border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
                 borderRadius: 8,
                 fontSize: 11,
                 fontWeight: 600,
@@ -1065,7 +1279,7 @@ export default function TimelineCanvas() {
         onToggleTag={() => {}}
       />
 
-      {/* Zone Canvas frise */}
+      {/* Zone Canvas frise principale */}
       <div style={{
         position: 'absolute',
         bottom: 70,
@@ -1086,8 +1300,8 @@ export default function TimelineCanvas() {
         left: 0,
         width: '100%',
         height: 70,
-        backgroundColor: '#020617',
-        borderTop: '1px solid #1e293b',
+        backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#020617',
+        borderTop: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #1e293b',
         cursor: 'pointer',
         touchAction: 'none',
         zIndex: 15
