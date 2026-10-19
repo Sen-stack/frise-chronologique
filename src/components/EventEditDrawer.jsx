@@ -8,10 +8,12 @@ export default function EventEditDrawer({
   onSave,
   onDelete,
   availableTags,
-  onToggleTag
+  onToggleTag,
+  availableGroups = []
 }) {
   const [formData, setFormData] = useState({
     titre: '',
+    groupe_id: '',
     anneeDebut: '',
     ereDebut: 'CE',
     anneeFin: '',
@@ -19,9 +21,13 @@ export default function EventEditDrawer({
     isRange: false,
     couleur: '',
     importance: 3,
-    tags: []
+    tags: [],
+    forme: 'bandeau',
+    style_trait: 'plein',
+    gravite: true
   });
 
+  const [newGroupInput, setNewGroupInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -30,6 +36,7 @@ export default function EventEditDrawer({
 
     setFormData({
       titre: event.titre || '',
+      groupe_id: event.groupe_id || '',
       anneeDebut: Math.abs(event.date_debut || 0).toString(),
       ereDebut: (event.date_debut || 0) < 0 ? 'BCE' : 'CE',
       anneeFin: isEvtRange ? Math.abs(event.date_fin).toString() : '',
@@ -37,8 +44,12 @@ export default function EventEditDrawer({
       isRange: isEvtRange,
       couleur: event.couleur || COLOR_PRESETS[0].stroke,
       importance: event.importance || 3,
-      tags: Array.isArray(event.tags) && event.tags.length > 0 ? event.tags : [event.categorie || 'Général']
+      tags: Array.isArray(event.tags) && event.tags.length > 0 ? event.tags : [event.categorie || 'Général'],
+      forme: event.forme || 'bandeau',
+      style_trait: event.style_trait || 'plein',
+      gravite: event.gravite !== false
     });
+    setNewGroupInput('');
   }, [event]);
 
   if (!isOpen || !event) return null;
@@ -58,12 +69,16 @@ export default function EventEditDrawer({
 
     const payload = {
       titre: formData.titre.trim(),
+      groupe_id: formData.groupe_id ? formData.groupe_id.trim() : null,
       date_debut: calculatedStart,
       date_fin: calculatedEnd,
       couleur: formData.couleur,
       importance: Number(formData.importance),
       tags: formData.tags,
-      categorie: formData.tags[0] || 'Général'
+      categorie: formData.tags[0] || 'Général',
+      forme: formData.forme || 'bandeau',
+      style_trait: formData.style_trait || 'plein',
+      gravite: formData.gravite !== false
     };
 
     await onSave(event.id, payload);
@@ -125,7 +140,7 @@ export default function EventEditDrawer({
           </button>
         </div>
 
-        {/* Formulaire simplifié */}
+        {/* Formulaire */}
         <form
           onSubmit={handleSubmit}
           style={{
@@ -157,6 +172,66 @@ export default function EventEditDrawer({
                 fontFamily: 'inherit'
               }}
             />
+          </div>
+
+          {/* Fil conducteur */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
+              Fil conducteur
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              {availableGroups.map((grp) => {
+                const isSelected = formData.groupe_id === grp;
+                return (
+                  <button
+                    key={grp}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, groupe_id: isSelected ? '' : grp }))}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 14,
+                      border: 'none',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? '#0284c7' : '#eae3d5',
+                      color: isSelected ? '#ffffff' : '#44403c',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {grp} {isSelected ? '✓' : ''}
+                  </button>
+                );
+              })}
+
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input
+                  type="text"
+                  placeholder="+ Nouveau fil"
+                  value={newGroupInput}
+                  onChange={(e) => setNewGroupInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const val = newGroupInput.trim();
+                      if (val) {
+                        setFormData(prev => ({ ...prev, groupe_id: val }));
+                        setNewGroupInput('');
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 14,
+                    border: '1px dashed #c7bba7',
+                    backgroundColor: 'transparent',
+                    fontSize: 11,
+                    outline: 'none',
+                    width: 110
+                  }}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Date de début & Ère */}
@@ -283,6 +358,229 @@ export default function EventEditDrawer({
                   >
                     CE
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+		  
+		  {/* Sélecteur d'apparence si période */}
+          {formData.isRange && (
+            <div style={{
+              backgroundColor: '#f3ece0',
+              border: '1px solid #dcd1be',
+              borderRadius: 12,
+              padding: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}>
+              {/* Préréglages rapides */}
+              <div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Préréglages rapides
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau', style_trait: 'plein', gravite: true }))}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: 7,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: (formData.forme === 'bandeau' && formData.style_trait === 'plein') ? '#ffffff' : 'transparent',
+                      color: '#44403c',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🏛️ Dynastie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'ligne', style_trait: 'plein', gravite: true }))}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: 7,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: (formData.forme === 'ligne' && formData.style_trait === 'plein') ? '#ffffff' : 'transparent',
+                      color: '#44403c',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    👤 Biographie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau', style_trait: 'pointille', gravite: true }))}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: 7,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: formData.style_trait === 'pointille' ? '#ffffff' : 'transparent',
+                      color: '#44403c',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🌫️ Période floue
+                  </button>
+                </div>
+              </div>
+
+              {/* Grille PowerPoint */}
+              <div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Forme du tracé
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau' }))}
+                    style={{
+                      border: (formData.forme || 'bandeau') === 'bandeau' ? '2px solid #b45309' : '1px solid #d6cebf',
+                      backgroundColor: (formData.forme || 'bandeau') === 'bandeau' ? '#ffffff' : '#faf7f2',
+                      borderRadius: 8,
+                      padding: '6px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <svg width="42" height="16" viewBox="0 0 48 18">
+                      <rect x="2" y="2" width="44" height="14" rx="2" fill="#b45309" fillOpacity="0.4" stroke="#b45309" strokeWidth="1.5" />
+                    </svg>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: '#44403c' }}>Bandeau</span>
+                  </div>
+
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'ligne' }))}
+                    style={{
+                      border: formData.forme === 'ligne' ? '2px solid #b45309' : '1px solid #d6cebf',
+                      backgroundColor: formData.forme === 'ligne' ? '#ffffff' : '#faf7f2',
+                      borderRadius: 8,
+                      padding: '6px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <svg width="42" height="16" viewBox="0 0 48 18">
+                      <line x1="6" y1="9" x2="42" y2="9" stroke="#b45309" strokeWidth="2.5" />
+                      <line x1="6" y1="4" x2="6" y2="14" stroke="#b45309" strokeWidth="2" />
+                      <line x1="42" y1="4" x2="42" y2="14" stroke="#b45309" strokeWidth="2" />
+                    </svg>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: '#44403c' }}>Ligne |—|</span>
+                  </div>
+
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'ruban' }))}
+                    style={{
+                      border: formData.forme === 'ruban' ? '2px solid #b45309' : '1px solid #d6cebf',
+                      backgroundColor: formData.forme === 'ruban' ? '#ffffff' : '#faf7f2',
+                      borderRadius: 8,
+                      padding: '6px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <svg width="42" height="16" viewBox="0 0 48 18">
+                      <rect x="2" y="3" width="44" height="12" rx="6" fill="#b45309" fillOpacity="0.25" stroke="#b45309" strokeWidth="1.5" />
+                    </svg>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: '#44403c' }}>Ruban</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Style de trait et Gravité */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 2 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Tracé</span>
+                  <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 2, borderRadius: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, style_trait: 'plein' }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: (formData.style_trait || 'plein') === 'plein' ? '#ffffff' : 'transparent',
+                        color: (formData.style_trait || 'plein') === 'plein' ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Plein
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, style_trait: 'pointille' }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: formData.style_trait === 'pointille' ? '#ffffff' : 'transparent',
+                        color: formData.style_trait === 'pointille' ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Pointillé
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Gravité</span>
+                  <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 2, borderRadius: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, gravite: true }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: (formData.gravite !== false) ? '#ffffff' : 'transparent',
+                        color: (formData.gravite !== false) ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Auto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, gravite: false }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: formData.gravite === false ? '#ffffff' : 'transparent',
+                        color: formData.gravite === false ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Fixe
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

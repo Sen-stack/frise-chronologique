@@ -15,7 +15,11 @@ export default function EventModal({
   newTagInput,
   setNewTagInput,
   onAddNewTag,
-  onToggleTag
+  onToggleTag,
+  availableGroups = [],
+  newGroupInput = '',
+  setNewGroupInput = () => {},
+  onAddNewGroup = () => {}
 }) {
   if (!isOpen) return null;
 
@@ -38,7 +42,9 @@ export default function EventModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 460,
+          maxWidth: 480,
+          maxHeight: '90vh',
+          overflowY: 'auto',
           backgroundColor: '#faf7f2',
           borderRadius: 20,
           boxShadow: '0 20px 45px rgba(28, 25, 23, 0.22)',
@@ -113,7 +119,64 @@ export default function EventModal({
             />
           </div>
 
-          {/* Sélecteur Ponctuel / Période (Segmented control) */}
+          {/* Fil conducteur / Thématique (badges cliquables comme les tags + ajout) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
+              Fil conducteur (facultatif)
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              {availableGroups.map((grp) => {
+                const isSelected = formData.groupe_id === grp;
+                return (
+                  <button
+                    key={grp}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, groupe_id: isSelected ? '' : grp }))}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 14,
+                      border: 'none',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? '#0284c7' : '#eae3d5',
+                      color: isSelected ? '#ffffff' : '#44403c',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {grp} {isSelected ? '✓' : ''}
+                  </button>
+                );
+              })}
+
+              {/* Champ d'ajout rapide de fil conducteur */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input
+                  type="text"
+                  placeholder="+ Nouveau fil"
+                  value={newGroupInput}
+                  onChange={(e) => setNewGroupInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      onAddNewGroup();
+                    }
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 14,
+                    border: '1px dashed #c7bba7',
+                    backgroundColor: 'transparent',
+                    fontSize: 11,
+                    outline: 'none',
+                    width: 110
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Sélecteur Ponctuel / Période */}
           <div
             style={{
               display: 'flex',
@@ -162,10 +225,236 @@ export default function EventModal({
               ⏳ Période
             </button>
           </div>
+		  {/* Sélecteur d'apparence de période (Préréglages + Style visuel PowerPoint) */}
+          {isRange && (
+            <div style={{
+              backgroundColor: '#f3ece0',
+              border: '1px solid #dcd1be',
+              borderRadius: 12,
+              padding: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}>
+              {/* 1. Préréglages rapides */}
+              <div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Préréglages rapides
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau', style_trait: 'plein', gravite: true }))}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: 7,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: (formData.forme === 'bandeau' && formData.style_trait === 'plein') ? '#ffffff' : 'transparent',
+                      color: '#44403c',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🏛️ Dynastie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'ligne', style_trait: 'plein', gravite: true }))}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: 7,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: (formData.forme === 'ligne' && formData.style_trait === 'plein') ? '#ffffff' : 'transparent',
+                      color: '#44403c',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    👤 Biographie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau', style_trait: 'pointille', gravite: true }))}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: 7,
+                      border: '1px solid #d6cebf',
+                      backgroundColor: formData.style_trait === 'pointille' ? '#ffffff' : 'transparent',
+                      color: '#44403c',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🌫️ Période floue
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Grille de formes façon PowerPoint */}
+              <div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Forme du tracé
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
+                  {/* Option Bandeau */}
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau' }))}
+                    style={{
+                      border: (formData.forme || 'bandeau') === 'bandeau' ? '2px solid #b45309' : '1px solid #d6cebf',
+                      backgroundColor: (formData.forme || 'bandeau') === 'bandeau' ? '#ffffff' : '#faf7f2',
+                      borderRadius: 8,
+                      padding: '8px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <svg width="48" height="18" viewBox="0 0 48 18">
+                      <rect x="2" y="2" width="44" height="14" rx="2" fill="#b45309" fillOpacity="0.4" stroke="#b45309" strokeWidth="1.5" />
+                    </svg>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#44403c' }}>Bandeau</span>
+                  </div>
+
+                  {/* Option Ligne fine */}
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'ligne' }))}
+                    style={{
+                      border: formData.forme === 'ligne' ? '2px solid #b45309' : '1px solid #d6cebf',
+                      backgroundColor: formData.forme === 'ligne' ? '#ffffff' : '#faf7f2',
+                      borderRadius: 8,
+                      padding: '8px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <svg width="48" height="18" viewBox="0 0 48 18">
+                      <line x1="6" y1="9" x2="42" y2="9" stroke="#b45309" strokeWidth="2.5" />
+                      <line x1="6" y1="4" x2="6" y2="14" stroke="#b45309" strokeWidth="2" />
+                      <line x1="42" y1="4" x2="42" y2="14" stroke="#b45309" strokeWidth="2" />
+                    </svg>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#44403c' }}>Ligne |—|</span>
+                  </div>
+
+                  {/* Option Ruban / Capsule */}
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, forme: 'ruban' }))}
+                    style={{
+                      border: formData.forme === 'ruban' ? '2px solid #b45309' : '1px solid #d6cebf',
+                      backgroundColor: formData.forme === 'ruban' ? '#ffffff' : '#faf7f2',
+                      borderRadius: 8,
+                      padding: '8px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <svg width="48" height="18" viewBox="0 0 48 18">
+                      <rect x="2" y="3" width="44" height="12" rx="6" fill="#b45309" fillOpacity="0.25" stroke="#b45309" strokeWidth="1.5" />
+                    </svg>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#44403c' }}>Ruban</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Ligne Trait & Gravité */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 2 }}>
+                {/* Style de trait */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Tracé</span>
+                  <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 2, borderRadius: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, style_trait: 'plein' }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: (formData.style_trait || 'plein') === 'plein' ? '#ffffff' : 'transparent',
+                        color: (formData.style_trait || 'plein') === 'plein' ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Plein
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, style_trait: 'pointille' }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: formData.style_trait === 'pointille' ? '#ffffff' : 'transparent',
+                        color: formData.style_trait === 'pointille' ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Pointillé
+                    </button>
+                  </div>
+                </div>
+
+                {/* Gravité */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Gravité</span>
+                  <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 2, borderRadius: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, gravite: true }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: (formData.gravite !== false) ? '#ffffff' : 'transparent',
+                        color: (formData.gravite !== false) ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Auto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, gravite: false }))}
+                      style={{
+                        flex: 1,
+                        padding: '4px 0',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        border: 'none',
+                        borderRadius: 5,
+                        cursor: 'pointer',
+                        backgroundColor: formData.gravite === false ? '#ffffff' : 'transparent',
+                        color: formData.gravite === false ? '#1c1917' : '#78716c'
+                      }}
+                    >
+                      Fixe
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Dates & Ères */}
           <div style={{ display: 'flex', gap: 10 }}>
-            {/* Année début */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
                 {isRange ? 'Année début' : 'Année'}
@@ -190,7 +479,6 @@ export default function EventModal({
               />
             </div>
 
-            {/* Ère début (BCE / CE) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: 130 }}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
                 Ère
@@ -234,7 +522,7 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Année fin (si période) */}
+          {/* Année fin */}
           {isRange && (
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -363,7 +651,6 @@ export default function EventModal({
                 );
               })}
 
-              {/* Champ d'ajout rapide de tag */}
               <div style={{ display: 'flex', gap: 4 }}>
                 <input
                   type="text"
@@ -390,10 +677,10 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Importance (1 à 5) */}
+          {/* Importance */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
-              Importance (visibilité au dézoom)
+              Importance
             </label>
             <div style={{ display: 'flex', backgroundColor: '#eae3d5', borderRadius: 10, padding: 3, gap: 4 }}>
               {[1, 2, 3, 4, 5].map((lvl) => {
@@ -424,7 +711,7 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Boutons d'action */}
+          {/* Actions */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
             <button
               type="button"

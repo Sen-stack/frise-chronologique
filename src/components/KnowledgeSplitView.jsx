@@ -43,6 +43,10 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
+  // Fil conducteur commun (Thématique)
+  const [groupEvents, setGroupEvents] = useState([]);
+  const [loadingGroup, setLoadingGroup] = useState(false);
+
   // Géolocalisation Leaflet
   const [coords, setCoords] = useState({ latitude: null, longitude: null });
 
@@ -79,6 +83,24 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       });
 
       setSaveMessage('');
+
+      // Chargement des étapes du fil conducteur s'il existe
+      if (event.groupe_id) {
+        setLoadingGroup(true);
+        supabase
+          .from('evenements')
+          .select('*')
+          .eq('groupe_id', event.groupe_id)
+          .order('date_debut', { ascending: true })
+          .then(({ data, error }) => {
+            if (!error && data) {
+              setGroupEvents(data);
+            }
+            setLoadingGroup(false);
+          });
+      } else {
+        setGroupEvents([]);
+      }
     }
   }, [event]);
 
@@ -221,7 +243,23 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             flexShrink: 0
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {event.groupe_id && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.8px',
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  backgroundColor: '#b45309',
+                  color: '#ffffff'
+                }}
+              >
+                Fil : {event.groupe_id}
+              </span>
+            )}
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1c1917', letterSpacing: -0.2 }}>
               {event.titre}
             </h1>
@@ -529,8 +567,6 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
             {/* VUE 2 : CARTE MODERNE + SÉLECTEUR DE VILLES FLOTTANT */}
             {activeTab === 'moderne' && (
               <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
-                
-                {/* Sélecteur de ville positionné en haut de la carte */}
                 <div
                   style={{
                     position: 'absolute',
@@ -585,7 +621,58 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               overflowY: 'auto'
             }}
           >
-            {/* Contexte principal */}
+            {/* 1. ÉTAPES DU FIL CONDUCTEUR (SI GROUPE EXISTANT) */}
+            {event.groupe_id && (
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  borderRadius: 10,
+                  border: '1px solid #e7ded0',
+                  padding: 10,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  flexShrink: 0
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#b45309', textTransform: 'uppercase' }}>
+                    Étapes du fil « {event.groupe_id} » ({groupEvents.length})
+                  </label>
+                  {loadingGroup && <span style={{ fontSize: 10, color: '#a8a29e' }}>Chargement...</span>}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 110, overflowY: 'auto' }}>
+                  {groupEvents.map(item => {
+                    const isCurrent = item.id === event.id;
+                    const dateStr = item.date_debut < 0 ? `${Math.abs(item.date_debut)} BCE` : `${item.date_debut} CE`;
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          backgroundColor: isCurrent ? '#fef3c7' : '#f9f6f0',
+                          border: isCurrent ? '1px solid #f59e0b' : '1px solid #e7ded0',
+                          fontSize: 11
+                        }}
+                      >
+                        <span style={{ fontWeight: isCurrent ? 700 : 500, color: '#1c1917' }}>
+                          {item.titre}
+                        </span>
+                        <span style={{ color: '#8c7e72', fontVariantNumeric: 'tabular-nums' }}>
+                          {dateStr}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Contexte principal */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -620,7 +707,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               />
             </div>
 
-            {/* Boutons d'ajout de blocs libres */}
+            {/* 3. Boutons d'ajout de blocs libres */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>
                 Blocs & Références ({blocs.length})

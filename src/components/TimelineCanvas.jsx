@@ -45,6 +45,10 @@ export default function TimelineCanvas() {
   const [availableTags, setAvailableTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [newTagInput, setNewTagInput] = useState('');
 
+  // Répertoire des fils conducteurs (groupes)
+  const [availableGroups, setAvailableGroups] = useState([]);
+  const [newGroupInput, setNewGroupInput] = useState('');
+
   // Filtres
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
@@ -67,13 +71,17 @@ export default function TimelineCanvas() {
   const [isRange, setIsRange] = useState(false);
   const [formData, setFormData] = useState({
     titre: '',
+    groupe_id: '',
     anneeDebut: '',
     ereDebut: 'CE',
     anneeFin: '',
     ereFin: 'CE',
     tags: [Object.keys(DEFAULT_TAG_PALETTE)[0]],
     couleur: COLOR_PRESETS[0].stroke,
-    importance: 3
+    importance: 3,
+    forme: 'bandeau',
+    style_trait: 'plein',
+    gravite: true
   });
 
   const viewRef = useRef(viewRange);
@@ -84,7 +92,6 @@ export default function TimelineCanvas() {
   const textureShiftRef = useRef(0);
   const stonePatternRef = useRef(null);
 
-  // Texture minérale ardoise satinée
   useEffect(() => {
     const stoneNoise = document.createElement('canvas');
     stoneNoise.width = 600;
@@ -177,7 +184,6 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
-  // Moteur de gravité dynamique des périodes
   const computeGravityTracks = (periodesList) => {
     const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - b.date_fin));
     const occupiedTop = [];
@@ -186,6 +192,11 @@ export default function TimelineCanvas() {
     return sorted.map((p, idx) => {
       const side = (idx % 2 === 0) ? 'top' : 'bottom';
       const occupied = side === 'top' ? occupiedTop : occupiedBottom;
+
+      // Si l'utilisateur a décoché la gravité (Fixe), on reste scotché au niveau 0 sans décalage
+      if (p.gravite === false) {
+        return { ...p, side, level: 0, dropYear: null };
+      }
 
       let level = 0;
       let dropYear = null;
@@ -227,9 +238,15 @@ export default function TimelineCanvas() {
 
     const isMobile = w < 640;
     const barY = h * (isMobile ? 0.70 : 0.58);
-    const trackH = 18;
-    const basePadding = 4;
-    const defaultHalfH = 26; // Épaisseur régulière et constante de la frise
+
+    // Zoom dynamique : 0 = vue très large (dézoomée), 1 = zoom très serré
+    const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
+
+    // Épaisseur de la frise et des rectangles proportionnelle au zoom
+    const trackH = Math.round((isMobile ? 16 : 18) + zoomFactor * (isMobile ? 8 : 12));
+    const basePadding = Math.round(4 + zoomFactor * 3);
+    const defaultHalfH = Math.round((isMobile ? 24 : 26) + zoomFactor * (isMobile ? 18 : 28));
+    const periodFontSize = Math.round(10 + zoomFactor * 2.5);
 
     const xStart = yearToX(GLOBAL_MIN);
     const xEnd = yearToX(GLOBAL_MAX);
@@ -250,14 +267,13 @@ export default function TimelineCanvas() {
 
     const gravityPeriodes = computeGravityTracks(rawPeriodes);
 
-    // 1. TRACÉ DU CORPS DE LA FRISE DROITE ET SYMÉTRIQUE
+    // Corps de la frise
     const visibleX1 = Math.max(-60, xStart);
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
 
     if (visibleW > 0) {
       const topY = barY - defaultHalfH;
-      const botY = barY + defaultHalfH;
       const totalH = defaultHalfH * 2;
 
       ctx.save();
@@ -275,7 +291,6 @@ export default function TimelineCanvas() {
       ctx.fill();
       ctx.restore();
 
-      // Matière minérale coupée dans le rectangle
       ctx.save();
       ctx.beginPath();
       if (ctx.roundRect) {
@@ -302,7 +317,6 @@ export default function TimelineCanvas() {
       ctx.stroke();
       ctx.restore();
 
-      // Axe médian interne
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -311,7 +325,7 @@ export default function TimelineCanvas() {
       ctx.stroke();
     }
 
-    // 2. TRACÉ DES PÉRIODES AVEC GRAVITÉ DYNAMIQUE & TRANSITION EN S
+    // Dessin des périodes avec libellé visible garanti
     gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
@@ -328,28 +342,61 @@ export default function TimelineCanvas() {
 
       ctx.save();
       ctx.fillStyle = isSelected ? style.stroke : style.fill;
-      ctx.strokeStyle = isSelected ? '#ffffff' : style.stroke;
-      ctx.lineWidth = isSelected ? 2 : 1.2;
+      ctx.strokeStyle = isSelected ? '#ffffff' : (p.couleur || style.stroke);
+      ctx.lineWidth = isSelected ? 2.5 : (p.forme === 'ligne' ? 2 : 1.2);
 
-      // Cas avec transition descendante vers l'axe médian (en S)
-      if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin) {
+      // Gestion des pointillés
+      if (p.style_trait === 'pointille') {
+        ctx.setLineDash([5, 4]);
+      } else {
+        ctx.setLineDash([]);
+      }
+
+      let rectTop = 0;
+      let rectH = trackH;
+
+      const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
+      rectTop = isTop ? yBase - trackH : yBase;
+
+      // --- 1. FORME LIGNE FINE |—| (Ex. Biographie) ---
+      if (p.forme === 'ligne') {
+        const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
+        const tickH = Math.max(6, trackH * 0.4);
+
+        ctx.beginPath();
+        // Ligne horizontale
+        ctx.moveTo(rX, lineY);
+        ctx.lineTo(rX + rW, lineY);
+        // Borne de début |
+        ctx.moveTo(rX, lineY - tickH / 2);
+        ctx.lineTo(rX, lineY + tickH / 2);
+        // Borne de fin |
+        ctx.moveTo(rX + rW, lineY - tickH / 2);
+        ctx.lineTo(rX + rW, lineY + tickH / 2);
+        ctx.stroke();
+
+        rectH = trackH;
+      }
+      // --- 2. BANDEAU CLASSIQUE OU RUBAN AVEC VIRAGE EN S ---
+      else if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin) {
         const xSplit = yearToX(p.dropYear);
         const xTransEnd = Math.min(rX + rW, xSplit + transitionW);
 
         const yL0 = barY + dir * basePadding;
         const yL1 = barY + dir * (basePadding + trackH + 3);
+        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
 
         ctx.beginPath();
-        ctx.moveTo(rX + 4, yL1 + dir * trackH);
+        ctx.moveTo(rX + radius, yL1 + dir * trackH);
         ctx.lineTo(xSplit, yL1 + dir * trackH);
         ctx.bezierCurveTo(
           xSplit + transitionW * 0.5, yL1 + dir * trackH,
           xSplit + transitionW * 0.5, yL0 + dir * trackH,
           xTransEnd, yL0 + dir * trackH
         );
-        ctx.lineTo(rX + rW - 4, yL0 + dir * trackH);
-        ctx.arcTo(rX + rW, yL0 + dir * trackH, rX + rW, yL0, 4);
-        ctx.arcTo(rX + rW, yL0, rX + rW - 4, yL0, 4);
+        ctx.lineTo(rX + rW - radius, yL0 + dir * trackH);
+        ctx.arcTo(rX + rW, yL0 + dir * trackH, rX + rW, yL0, radius);
+        ctx.arcTo(rX + rW, yL0, rX + rW - radius, yL0, radius);
 
         ctx.lineTo(xTransEnd, yL0);
         ctx.bezierCurveTo(
@@ -357,56 +404,57 @@ export default function TimelineCanvas() {
           xSplit + transitionW * 0.5, yL1,
           xSplit, yL1
         );
-        ctx.lineTo(rX + 4, yL1);
-        ctx.arcTo(rX, yL1, rX, yL1 + dir * trackH, 4);
-        ctx.arcTo(rX, yL1 + dir * trackH, rX + 4, yL1 + dir * trackH, 4);
+        ctx.lineTo(rX + radius, yL1);
+        ctx.arcTo(rX, yL1, rX, yL1 + dir * trackH, radius);
+        ctx.arcTo(rX, yL1 + dir * trackH, rX + radius, yL1 + dir * trackH, radius);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
 
-        hitboxesRef.current.push({
-          type: 'rect',
-          x: rX,
-          y: Math.min(yL0, yL1 + dir * trackH),
-          w: rW,
-          h: Math.abs(yL1 - yL0) + trackH,
-          evt: p
-        });
-      } else {
-        // Cas standard : bande rectangulaire
-        const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
-        const yTop = isTop ? yBase - trackH : yBase;
+        rectTop = Math.min(yL0, yL1 + dir * trackH);
+        rectH = Math.abs(yL1 - yL0) + trackH;
+      } 
+      // --- 3. RECTANGLE BANDEAU OU RUBAN DROIT ---
+      else {
+        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
 
         ctx.beginPath();
         if (ctx.roundRect) {
-          ctx.roundRect(rX, yTop, rW, trackH, 4);
+          ctx.roundRect(rX, rectTop, rW, trackH, radius);
         } else {
-          ctx.rect(rX, yTop, rW, trackH);
+          ctx.rect(rX, rectTop, rW, trackH);
         }
         ctx.fill();
         ctx.stroke();
-
-        hitboxesRef.current.push({ type: 'rect', x: rX, y: yTop, w: rW, h: trackH, evt: p });
       }
 
-      // Titre gravé sur la période
-      if (rW > 35) {
+      hitboxesRef.current.push({
+        type: 'rect',
+        x: rX,
+        y: rectTop,
+        w: rW,
+        h: rectH,
+        evt: p
+      });
+
+      // Libellé de la période : centré verticalement dans son propre rectangle
+      if (rW > 30) {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(rX + 2, barY - defaultHalfH, rW - 4, defaultHalfH * 2);
+        ctx.rect(rX + 2, rectTop, rW - 4, rectH);
         ctx.clip();
         ctx.fillStyle = '#ffffff';
-        ctx.font = '600 10px system-ui, sans-serif';
+        ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        const labelY = isTop ? barY - basePadding - trackH / 2 : barY + basePadding + trackH / 2;
-        ctx.fillText(p.titre, rX + 6, labelY);
+        ctx.fillText(p.titre, rX + 6, rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
         ctx.restore();
       }
+
       ctx.restore();
     });
 
-    // 3. GRADUATIONS DE DATES EN BAS
+    // Graduations
     const interval = getTickInterval(span);
     const firstTick = Math.ceil(vMin / interval) * interval;
     ctx.fillStyle = currentTheme === 'light' ? '#52525b' : th.tickText;
@@ -425,8 +473,7 @@ export default function TimelineCanvas() {
       ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
     }
 
-    // 4. JALONS PONCTUELS ÉPURÉS (AIGUILLES MINIMALISTES)
-    // 4. JALONS PONCTUELS ÉPURÉS (ANTI-COLLISION & HAUTEURS DYNAMIQUES SÉCURISÉES)
+    // Ponctuels avec étagement anti-collision
     let minImportanceForText = 1;
     if (span > 5000) minImportanceForText = 4;
     else if (span > 800) minImportanceForText = 3;
@@ -441,24 +488,19 @@ export default function TimelineCanvas() {
 
       const titreTexte = String(evt.titre || 'Sans titre');
       const style = getItemStyle(evt);
-      
-      // isSelected calculé en premier
       const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
       const shouldShowLabel = (evt.importance || 3) >= minImportanceForText || isSelected;
 
-      // Mesure de l'encombrement horizontal
       ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
       const textWidth = ctx.measureText(titreTexte).width;
       const labelW = shouldShowLabel ? textWidth + 30 : 16;
 
-      // Recherche de l'étage disponible pour éviter les chevauchements
       let trackIndex = 0;
       while (pinTracks[trackIndex] && pinTracks[trackIndex] > x - 8) {
         trackIndex++;
       }
       pinTracks[trackIndex] = x + labelW;
 
-      // Hauteur de tige étagée (5 paliers)
       const baseStem = isMobile ? 26 : 36;
       const stepStem = isMobile ? 22 : 30;
       const decalageY = baseStem + (trackIndex % 5) * stepStem;
@@ -467,7 +509,6 @@ export default function TimelineCanvas() {
       const pinColor = isSelected ? '#0284c7' : (evt.couleur || style.stroke || '#475569');
 
       ctx.save();
-      // Tige
       ctx.strokeStyle = isSelected ? pinColor : 'rgba(148, 163, 184, 0.65)';
       ctx.lineWidth = isSelected ? 1.5 : 1;
       ctx.beginPath();
@@ -475,18 +516,15 @@ export default function TimelineCanvas() {
       ctx.lineTo(x, yT);
       ctx.stroke();
 
-      // Point d'accroche bas
       ctx.fillStyle = pinColor;
       ctx.beginPath();
       ctx.arc(x, barY - defaultHalfH, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // Pastille sommitale
       ctx.beginPath();
       ctx.arc(x, yT, isSelected ? 4 : 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Libellé (uniquement si visible)
       if (shouldShowLabel) {
         const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
 
@@ -505,7 +543,6 @@ export default function TimelineCanvas() {
       }
       ctx.restore();
 
-      // Hitbox
       hitboxesRef.current.push({
         type: 'rect',
         x: x - 8,
@@ -516,7 +553,7 @@ export default function TimelineCanvas() {
       });
     });
 
-    // 5. BORNES EXTRÊMES (ORIGINE ET AUJOURD'HUI)
+    // Bornes
     if (xStart >= -120 && xStart <= w + 120) {
       ctx.save();
       ctx.strokeStyle = '#ef4444';
@@ -549,7 +586,7 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // 6. MINIMAP BASSE
+    // Minimap
     mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
 
@@ -632,14 +669,25 @@ export default function TimelineCanvas() {
         setEvents(data);
         setCustomSelectedIds(new Set(data.map(d => d.id)));
 
+        // Extraire les tags
         const extractedTags = new Set(Object.keys(DEFAULT_TAG_PALETTE));
+        // Extraire les fils conducteurs existants
+        const extractedGroups = new Set();
+
         data.forEach(item => {
           if (Array.isArray(item.tags)) item.tags.forEach(t => extractedTags.add(t));
           else if (item.categorie) extractedTags.add(item.categorie);
+
+          if (item.groupe_id && typeof item.groupe_id === 'string' && item.groupe_id.trim()) {
+            extractedGroups.add(item.groupe_id.trim());
+          }
         });
-        const list = Array.from(extractedTags);
-        setAvailableTags(list);
-        setSelectedTags(list);
+
+        const listTags = Array.from(extractedTags);
+        setAvailableTags(listTags);
+        setSelectedTags(listTags);
+
+        setAvailableGroups(Array.from(extractedGroups));
       }
     }
     chargerEvenements();
@@ -827,7 +875,7 @@ export default function TimelineCanvas() {
       } else if (miniMode === 'left') {
         if (targetViewRef.current.max - targetYear >= 1) smoothSetView({ min: targetYear, max: targetViewRef.current.max });
       } else if (miniMode === 'right') {
-        if (targetYear - targetViewRef.current.min >= 1) smoothSetView({ min: targetViewRef.current.min, max: targetYear });
+        if (targetYear - targetViewRef.current.min >= 1) smoothSetView({ min: targetYear, max: targetViewRef.current.max });
       }
     };
 
@@ -891,6 +939,7 @@ export default function TimelineCanvas() {
     setIsRange(false);
     setFormData({
       titre: '',
+      groupe_id: '',
       anneeDebut: '',
       ereDebut: 'CE',
       anneeFin: '',
@@ -899,6 +948,7 @@ export default function TimelineCanvas() {
       couleur: COLOR_PRESETS[0].stroke,
       importance: 3
     });
+    setNewGroupInput('');
     setIsCreateModalOpen(true);
   };
 
@@ -990,8 +1040,12 @@ export default function TimelineCanvas() {
     const calculatedPeriod = getAutoPeriod(calculatedStart);
     const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
 
+    // Sauvegarde exacte avec casse respectée pour le fil conducteur
+    const chosenGroup = formData.groupe_id ? formData.groupe_id.trim() : null;
+
     const payload = {
       titre: formData.titre.trim(),
+      groupe_id: chosenGroup,
       date_debut: calculatedStart,
       date_fin: calculatedEnd,
       tags: chosenTags,
@@ -1002,7 +1056,10 @@ export default function TimelineCanvas() {
       description: null,
       latitude: null,
       longitude: null,
-      cartes_historiques: []
+      cartes_historiques: [],
+      forme: formData.forme || 'bandeau',
+      style_trait: formData.style_trait || 'plein',
+      gravite: formData.gravite !== false
     };
 
     const { data, error } = await supabase
@@ -1019,6 +1076,12 @@ export default function TimelineCanvas() {
       setEvents(prev => [...prev, created]);
       setCustomSelectedIds(prev => new Set([...prev, created.id]));
       setSelectedEvent(created);
+
+      // Si c'est un nouveau fil conducteur, on l'ajoute à la liste disponible
+      if (chosenGroup && !availableGroups.includes(chosenGroup)) {
+        setAvailableGroups(prev => [...prev, chosenGroup]);
+      }
+
       setIsCreateModalOpen(false);
 
       const centerYear = calculatedEnd ? (calculatedStart + calculatedEnd) / 2 : calculatedStart;
@@ -1266,6 +1329,18 @@ export default function TimelineCanvas() {
             return { ...prev, tags: [...prev.tags, tag] };
           });
         }}
+        availableGroups={availableGroups}
+        newGroupInput={newGroupInput}
+        setNewGroupInput={setNewGroupInput}
+        onAddNewGroup={() => {
+          const trimmed = newGroupInput.trim();
+          if (!trimmed) return;
+          if (!availableGroups.includes(trimmed)) {
+            setAvailableGroups(prev => [...prev, trimmed]);
+          }
+          setFormData(prev => ({ ...prev, groupe_id: trimmed }));
+          setNewGroupInput('');
+        }}
       />
 
       {/* Volet latéral droit d'édition */}
@@ -1277,9 +1352,10 @@ export default function TimelineCanvas() {
         onDelete={handleDeleteEvent}
         availableTags={availableTags}
         onToggleTag={() => {}}
+		availableGroups={availableGroups}
       />
 
-      {/* Zone Canvas frise principale */}
+      {/* Zone Canvas frise */}
       <div style={{
         position: 'absolute',
         bottom: 70,
