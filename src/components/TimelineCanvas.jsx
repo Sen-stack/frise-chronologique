@@ -45,7 +45,7 @@ export default function TimelineCanvas() {
   const [availableTags, setAvailableTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [newTagInput, setNewTagInput] = useState('');
 
-  // Répertoire des fils conducteurs (groupes)
+  // Répertoire des fils conducteurs
   const [availableGroups, setAvailableGroups] = useState([]);
   const [newGroupInput, setNewGroupInput] = useState('');
 
@@ -81,7 +81,8 @@ export default function TimelineCanvas() {
     importance: 3,
     forme: 'bandeau',
     style_trait: 'plein',
-    gravite: true
+    gravite: true,
+    opacite: 0.85
   });
 
   const viewRef = useRef(viewRange);
@@ -184,33 +185,108 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
+  // Moteur d'empilement avec cascade continue (chute palier par palier)
   const computeGravityTracks = (periodesList) => {
-    const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - b.date_fin));
-    const occupiedTop = [];
-    const occupiedBottom = [];
+    const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || a.date_fin - b.date_fin);
+
+    const lanesTop = [];
+    const lanesBottom = [];
+
+    const isSlotFree = (lane, start, end) => {
+      if (!lane) return true;
+      return !lane.some(seg => Math.max(seg.start, start) < Math.min(seg.end, end));
+    };
 
     return sorted.map((p, idx) => {
-      const side = (idx % 2 === 0) ? 'top' : 'bottom';
-      const occupied = side === 'top' ? occupiedTop : occupiedBottom;
+      let side = p.cote ? p.cote : ((idx % 2 === 0) ? 'top' : 'bottom');
+      let currentLanes = side === 'top' ? lanesTop : lanesBottom;
 
-      // Si l'utilisateur a décoché la gravité (Fixe), on reste scotché au niveau 0 sans décalage
+      // Mode Fixe (sans gravité)
       if (p.gravite === false) {
-        return { ...p, side, level: 0, dropYear: null };
+        let fixedLvl = 0;
+        while (!isSlotFree(currentLanes[fixedLvl], p.date_debut, p.date_fin)) {
+          fixedLvl++;
+        }
+        if (!currentLanes[fixedLvl]) currentLanes[fixedLvl] = [];
+        currentLanes[fixedLvl].push({ start: p.date_debut, end: p.date_fin });
+        return {
+          ...p,
+          side,
+          segments: [{ start: p.date_debut, end: p.date_fin, level: fixedLvl }]
+        };
       }
 
-      let level = 0;
-      let dropYear = null;
+      // Équilibrage initial
+      const altSide = side === 'top' ? 'bottom' : 'top';
+      const altLanes = altSide === 'top' ? lanesTop : lanesBottom;
 
-      while (occupied[level] && occupied[level] > p.date_debut) {
-        level++;
+      let startLvl = 0;
+      while (!isSlotFree(currentLanes[startLvl], p.date_debut, p.date_debut + 0.1)) {
+        startLvl++;
       }
 
-      if (level > 0 && occupied[level - 1] && occupied[level - 1] < p.date_fin) {
-        dropYear = occupied[level - 1];
+      let altStartLvl = 0;
+      while (!isSlotFree(altLanes[altStartLvl], p.date_debut, p.date_debut + 0.1)) {
+        altStartLvl++;
       }
 
-      occupied[level] = p.date_fin;
-      return { ...p, side, level, dropYear };
+      if (altStartLvl < startLvl) {
+        side = altSide;
+        currentLanes = altLanes;
+        startLvl = altStartLvl;
+      }
+
+      // Découpage en tranches d'années successives pour descendre à chaque libération
+      const criticalYears = new Set([p.date_debut, p.date_fin]);
+      currentLanes.forEach(lane => {
+        if (!lane) return;
+        lane.forEach(seg => {
+          if (seg.end > p.date_debut && seg.end < p.date_fin) {
+            criticalYears.add(seg.end);
+          }
+        });
+      });
+
+      const sortedMilestones = Array.from(criticalYears).sort((a, b) => a - b);
+      const segments = [];
+      let currentLevel = startLvl;
+
+      for (let i = 0; i < sortedMilestones.length - 1; i++) {
+        const segStart = sortedMilestones[i];
+        const segEnd = sortedMilestones[i + 1];
+
+        // Gravité : on tente de descendre le plus bas possible
+        let bestLevel = currentLevel;
+        for (let target = 0; target <= currentLevel; target++) {
+          if (isSlotFree(currentLanes[target], segStart, segEnd)) {
+            bestLevel = target;
+            break;
+          }
+        }
+
+        currentLevel = bestLevel;
+        segments.push({ start: segStart, end: segEnd, level: currentLevel });
+
+        if (!currentLanes[currentLevel]) currentLanes[currentLevel] = [];
+        currentLanes[currentLevel].push({ start: segStart, end: segEnd });
+      }
+
+      // Fusion des segments consécutifs qui restent sur le même niveau
+      const fusedSegments = [];
+      segments.forEach(seg => {
+        const last = fusedSegments[fusedSegments.length - 1];
+        if (last && last.level === seg.level && Math.abs(last.end - seg.start) < 0.001) {
+          last.end = seg.end;
+        } else {
+          fusedSegments.push({ ...seg });
+        }
+      });
+
+      return {
+        ...p,
+        side,
+        segments: fusedSegments
+      };
     });
   };
 
@@ -239,14 +315,13 @@ export default function TimelineCanvas() {
     const isMobile = w < 640;
     const barY = h * (isMobile ? 0.70 : 0.58);
 
-    // Zoom dynamique : 0 = vue très large (dézoomée), 1 = zoom très serré
     const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
-
-    // Épaisseur de la frise et des rectangles proportionnelle au zoom
     const trackH = Math.round((isMobile ? 16 : 18) + zoomFactor * (isMobile ? 8 : 12));
     const basePadding = Math.round(4 + zoomFactor * 3);
-    const defaultHalfH = Math.round((isMobile ? 24 : 26) + zoomFactor * (isMobile ? 18 : 28));
     const periodFontSize = Math.round(10 + zoomFactor * 2.5);
+
+    // Largeur fixe originale de la frise ardoise
+    const defaultHalfH = Math.round((isMobile ? 24 : 26) + zoomFactor * (isMobile ? 18 : 28));
 
     const xStart = yearToX(GLOBAL_MIN);
     const xEnd = yearToX(GLOBAL_MAX);
@@ -267,7 +342,7 @@ export default function TimelineCanvas() {
 
     const gravityPeriodes = computeGravityTracks(rawPeriodes);
 
-    // Corps de la frise
+    // Corps de la frise minérale ardoise
     const visibleX1 = Math.max(-60, xStart);
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
@@ -325,7 +400,7 @@ export default function TimelineCanvas() {
       ctx.stroke();
     }
 
-    // Dessin des périodes avec libellé visible garanti
+    // Tracé des Périodes avec cascade multi-segments
     gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
@@ -338,128 +413,187 @@ export default function TimelineCanvas() {
       const isSelected = (selectedEvent && selectedEvent.id === p.id) || (splitEvent && splitEvent.id === p.id);
       const isTop = p.side === 'top';
       const dir = isTop ? -1 : 1;
-      const transitionW = 35;
+      const transitionW = 32;
 
       ctx.save();
       ctx.fillStyle = isSelected ? style.stroke : (p.couleur || style.stroke || style.fill);
       ctx.strokeStyle = isSelected ? '#ffffff' : (p.couleur || style.stroke);
       ctx.lineWidth = isSelected ? 2.5 : (p.forme === 'ligne' ? 2 : 1.2);
 
-      // Gestion des pointillés
       if (p.style_trait === 'pointille') {
         ctx.setLineDash([5, 4]);
       } else {
         ctx.setLineDash([]);
       }
 
-      let rectTop = 0;
-      let rectH = trackH;
+      const segs = p.segments && p.segments.length > 0
+        ? p.segments
+        : [{ start: p.date_debut, end: p.date_fin, level: 0 }];
 
-      const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
-      rectTop = isTop ? yBase - trackH : yBase;
+      // Calcul des coordonnées pour chaque tronçon
+      const pieces = segs.map(s => {
+        const sx = yearToX(s.start);
+        const ex = yearToX(s.end);
+        const yBase = barY + dir * (basePadding + s.level * (trackH + 3));
+        const yTop = isTop ? yBase - trackH : yBase;
+        return {
+          sx,
+          ex,
+          w: Math.max(2, ex - sx),
+          yTop,
+          yBottom: yTop + trackH,
+          level: s.level
+        };
+      });
 
-      // --- CAS 1 : FORME LIGNE FINE |—| (Pas de fond, juste le trait) ---
+      // 1. FORME LIGNE FINE
       if (p.forme === 'ligne') {
-        const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
-        const tickH = Math.max(6, trackH * 0.4);
-
         ctx.beginPath();
-        // Ligne horizontale
-        ctx.moveTo(rX, lineY);
-        ctx.lineTo(rX + rW, lineY);
-        // Borne gauche |
-        ctx.moveTo(rX, lineY - tickH / 2);
-        ctx.lineTo(rX, lineY + tickH / 2);
-        // Borne droite |
-        ctx.moveTo(rX + rW, lineY - tickH / 2);
-        ctx.lineTo(rX + rW, lineY + tickH / 2);
-        ctx.stroke();
+        pieces.forEach((pc, i) => {
+          const lineY = isTop ? pc.yTop + trackH * 0.75 : pc.yTop + trackH * 0.25;
+          ctx.moveTo(pc.sx, lineY);
+          ctx.lineTo(pc.ex, lineY);
 
-        rectH = trackH;
+          if (i === 0) {
+            ctx.moveTo(pc.sx, lineY - 4);
+            ctx.lineTo(pc.sx, lineY + 4);
+          }
+          if (i === pieces.length - 1) {
+            ctx.moveTo(pc.ex, lineY - 4);
+            ctx.lineTo(pc.ex, lineY + 4);
+          }
+
+          hitboxesRef.current.push({
+            type: 'rect',
+            x: pc.sx,
+            y: pc.yTop,
+            w: pc.w,
+            h: trackH,
+            evt: p
+          });
+        });
+        ctx.stroke();
       }
-      // --- CAS 2 : BANDEAU AVEC VIRAGE EN S (Remplissage avec opacité) ---
-      else if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin) {
-        const xSplit = yearToX(p.dropYear);
-        const xTransEnd = Math.min(rX + rW, xSplit + transitionW);
-
-        const yL0 = barY + dir * basePadding;
-        const yL1 = barY + dir * (basePadding + trackH + 3);
-        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
-
-        ctx.beginPath();
-        ctx.moveTo(rX + radius, yL1 + dir * trackH);
-        ctx.lineTo(xSplit, yL1 + dir * trackH);
-        ctx.bezierCurveTo(
-          xSplit + transitionW * 0.5, yL1 + dir * trackH,
-          xSplit + transitionW * 0.5, yL0 + dir * trackH,
-          xTransEnd, yL0 + dir * trackH
-        );
-        ctx.lineTo(rX + rW - radius, yL0 + dir * trackH);
-        ctx.arcTo(rX + rW, yL0 + dir * trackH, rX + rW, yL0, radius);
-        ctx.arcTo(rX + rW, yL0, rX + rW - radius, yL0, radius);
-
-        ctx.lineTo(xTransEnd, yL0);
-        ctx.bezierCurveTo(
-          xSplit + transitionW * 0.5, yL0,
-          xSplit + transitionW * 0.5, yL1,
-          xSplit, yL1
-        );
-        ctx.lineTo(rX + radius, yL1);
-        ctx.arcTo(rX, yL1, rX, yL1 + dir * trackH, radius);
-        ctx.arcTo(rX, yL1 + dir * trackH, rX + radius, yL1 + dir * trackH, radius);
-        ctx.closePath();
-
-        // Application de l'opacité sur le fond uniquement
-        ctx.save();
-        ctx.globalAlpha = p.opacite ?? 0.85;
-        ctx.fill();
-        ctx.restore();
-
-        ctx.stroke();
-
-        rectTop = Math.min(yL0, yL1 + dir * trackH);
-        rectH = Math.abs(yL1 - yL0) + trackH;
-      } 
-      // --- CAS 3 : RECTANGLE OU RUBAN DROIT (Remplissage avec opacité) ---
+      // 2. FORME BANDEAU EN CASCADE CONTINUE
       else {
         const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
 
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(rX, rectTop, rW, trackH, radius);
+        if (pieces.length === 1) {
+          const pc = pieces[0];
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(pc.sx, pc.yTop, pc.w, trackH, radius);
+          } else {
+            ctx.rect(pc.sx, pc.yTop, pc.w, trackH);
+          }
+          ctx.save();
+          ctx.globalAlpha = p.opacite ?? 0.85;
+          ctx.fill();
+          ctx.restore();
+          ctx.stroke();
+
+          hitboxesRef.current.push({
+            type: 'rect',
+            x: pc.sx,
+            y: pc.yTop,
+            w: pc.w,
+            h: trackH,
+            evt: p
+          });
         } else {
-          ctx.rect(rX, rectTop, rW, trackH);
+          // Tracé continu multi-virages en S
+          ctx.beginPath();
+
+          // Bord supérieur de gauche à droite
+          for (let i = 0; i < pieces.length; i++) {
+            const cur = pieces[i];
+            const next = pieces[i + 1];
+
+            if (i === 0) {
+              ctx.moveTo(cur.sx + radius, cur.yTop);
+            }
+
+            if (next) {
+              const xTransStart = Math.max(cur.sx, next.sx - transitionW / 2);
+              const xTransEnd = Math.min(next.ex, next.sx + transitionW / 2);
+              ctx.lineTo(xTransStart, cur.yTop);
+              ctx.bezierCurveTo(
+                (xTransStart + xTransEnd) / 2, cur.yTop,
+                (xTransStart + xTransEnd) / 2, next.yTop,
+                xTransEnd, next.yTop
+              );
+            } else {
+              ctx.lineTo(cur.ex - radius, cur.yTop);
+              ctx.arcTo(cur.ex, cur.yTop, cur.ex, cur.yTop + radius, radius);
+              ctx.arcTo(cur.ex, cur.yBottom, cur.ex - radius, cur.yBottom, radius);
+            }
+          }
+
+          // Bord inférieur de droite à gauche
+          for (let i = pieces.length - 1; i >= 0; i--) {
+            const cur = pieces[i];
+            const prev = pieces[i - 1];
+
+            if (prev) {
+              const xTransStart = Math.min(cur.ex, cur.sx + transitionW / 2);
+              const xTransEnd = Math.max(prev.sx, cur.sx - transitionW / 2);
+              ctx.lineTo(xTransStart, cur.yBottom);
+              ctx.bezierCurveTo(
+                (xTransStart + xTransEnd) / 2, cur.yBottom,
+                (xTransStart + xTransEnd) / 2, prev.yBottom,
+                xTransEnd, prev.yBottom
+              );
+            } else {
+              ctx.lineTo(cur.sx + radius, cur.yBottom);
+              ctx.arcTo(cur.sx, cur.yBottom, cur.sx, cur.yBottom - radius, radius);
+              ctx.arcTo(cur.sx, cur.yTop, cur.sx + radius, cur.yTop, radius);
+            }
+          }
+
+          ctx.closePath();
+          ctx.save();
+          ctx.globalAlpha = p.opacite ?? 0.85;
+          ctx.fill();
+          ctx.restore();
+          ctx.stroke();
+
+          // Hitboxes découpées strictement par morceau pour éviter tout clic dans le vide
+          pieces.forEach((pc, idx) => {
+            let segX = pc.sx;
+            let segW = pc.w;
+
+            if (idx > 0) {
+              segX += transitionW / 2;
+              segW -= transitionW / 2;
+            }
+            if (idx < pieces.length - 1) {
+              segW -= transitionW / 2;
+            }
+
+            hitboxesRef.current.push({
+              type: 'rect',
+              x: segX,
+              y: pc.yTop,
+              w: Math.max(4, segW),
+              h: trackH,
+              evt: p
+            });
+          });
         }
-
-        // Application de l'opacité sur le fond uniquement
-        ctx.save();
-        ctx.globalAlpha = p.opacite ?? 0.85;
-        ctx.fill();
-        ctx.restore();
-
-        ctx.stroke();
       }
 
-      hitboxesRef.current.push({
-        type: 'rect',
-        x: rX,
-        y: rectTop,
-        w: rW,
-        h: rectH,
-        evt: p
-      });
-
-      // Libellé de la période : centré verticalement dans son rectangle
+      // Libellé de la période : centré sur le premier tronçon
       if (rW > 30) {
+        const firstPc = pieces[0];
         ctx.save();
         ctx.beginPath();
-        ctx.rect(rX + 2, rectTop, rW - 4, rectH);
+        ctx.rect(firstPc.sx + 2, firstPc.yTop, Math.max(10, firstPc.w - 4), trackH);
         ctx.clip();
         ctx.fillStyle = '#ffffff';
         ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(p.titre, rX + 6, rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
+        ctx.fillText(p.titre, firstPc.sx + 6, firstPc.yTop + trackH / 2);
         ctx.restore();
       }
 
@@ -485,7 +619,7 @@ export default function TimelineCanvas() {
       ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
     }
 
-    // Ponctuels avec étagement anti-collision
+    // Ponctuels avec étagement
     let minImportanceForText = 1;
     if (span > 5000) minImportanceForText = 4;
     else if (span > 800) minImportanceForText = 3;
@@ -505,7 +639,7 @@ export default function TimelineCanvas() {
 
       ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
       const textWidth = ctx.measureText(titreTexte).width;
-      const labelW = shouldShowLabel ? textWidth + 30 : 16;
+      const labelW = shouldShowLabel ? textWidth + 16 : 16;
 
       let trackIndex = 0;
       while (pinTracks[trackIndex] && pinTracks[trackIndex] > x - 8) {
@@ -557,10 +691,10 @@ export default function TimelineCanvas() {
 
       hitboxesRef.current.push({
         type: 'rect',
-        x: x - 8,
-        y: yT - 16,
-        w: labelW,
-        h: 36,
+        x: x - 6,
+        y: yT - 14,
+        w: labelW + 8,
+        h: 28,
         evt
       });
     });
@@ -681,9 +815,7 @@ export default function TimelineCanvas() {
         setEvents(data);
         setCustomSelectedIds(new Set(data.map(d => d.id)));
 
-        // Extraire les tags
         const extractedTags = new Set(Object.keys(DEFAULT_TAG_PALETTE));
-        // Extraire les fils conducteurs existants
         const extractedGroups = new Set();
 
         data.forEach(item => {
@@ -698,7 +830,6 @@ export default function TimelineCanvas() {
         const listTags = Array.from(extractedTags);
         setAvailableTags(listTags);
         setSelectedTags(listTags);
-
         setAvailableGroups(Array.from(extractedGroups));
       }
     }
@@ -827,7 +958,7 @@ export default function TimelineCanvas() {
       const cx = (e.clientX || (e.changedTouches && e.changedTouches[0].clientX)) - rect.left;
       const cy = (e.clientY || (e.changedTouches && e.changedTouches[0].clientY)) - rect.top;
 
-      const hit = hitboxesRef.current.find(h => {
+      const hit = [...hitboxesRef.current].reverse().find(h => {
         if (h.type === 'circle') {
           return Math.hypot(cx - h.x, cy - h.y) <= h.r;
         } else if (h.type === 'rect') {
@@ -958,7 +1089,11 @@ export default function TimelineCanvas() {
       ereFin: 'CE',
       tags: [availableTags[0] || Object.keys(DEFAULT_TAG_PALETTE)[0]],
       couleur: COLOR_PRESETS[0].stroke,
-      importance: 3
+      importance: 3,
+      forme: 'bandeau',
+      style_trait: 'plein',
+      gravite: true,
+      opacite: 0.85
     });
     setNewGroupInput('');
     setIsCreateModalOpen(true);
@@ -1051,8 +1186,6 @@ export default function TimelineCanvas() {
     setIsSubmitting(true);
     const calculatedPeriod = getAutoPeriod(calculatedStart);
     const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
-
-    // Sauvegarde exacte avec casse respectée pour le fil conducteur
     const chosenGroup = formData.groupe_id ? formData.groupe_id.trim() : null;
 
     const payload = {
@@ -1071,7 +1204,8 @@ export default function TimelineCanvas() {
       cartes_historiques: [],
       forme: formData.forme || 'bandeau',
       style_trait: formData.style_trait || 'plein',
-      gravite: formData.gravite !== false
+      gravite: formData.gravite !== false,
+      opacite: formData.opacite ?? 0.85
     };
 
     const { data, error } = await supabase
@@ -1089,7 +1223,6 @@ export default function TimelineCanvas() {
       setCustomSelectedIds(prev => new Set([...prev, created.id]));
       setSelectedEvent(created);
 
-      // Si c'est un nouveau fil conducteur, on l'ajoute à la liste disponible
       if (chosenGroup && !availableGroups.includes(chosenGroup)) {
         setAvailableGroups(prev => [...prev, chosenGroup]);
       }
@@ -1364,7 +1497,7 @@ export default function TimelineCanvas() {
         onDelete={handleDeleteEvent}
         availableTags={availableTags}
         onToggleTag={() => {}}
-		availableGroups={availableGroups}
+        availableGroups={availableGroups}
       />
 
       {/* Zone Canvas frise */}
