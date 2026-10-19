@@ -22,7 +22,7 @@ function MapController({ center, zoom }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       map.invalidateSize();
-      if (center) {
+      if (center && !isNaN(center[0]) && !isNaN(center[1])) {
         map.setView(center, zoom);
       }
     }, 150);
@@ -47,8 +47,11 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
   const [groupEvents, setGroupEvents] = useState([]);
   const [loadingGroup, setLoadingGroup] = useState(false);
 
-  // Géolocalisation Leaflet
+  // Géolocalisation Leaflet multi-points
   const [coords, setCoords] = useState({ latitude: null, longitude: null });
+  const [lieux, setLieux] = useState([]);
+  const [nouveauRole, setNouveauRole] = useState('');
+  const [villeSelectionnee, setVilleSelectionnee] = useState(null);
 
   // Modale Wikimedia et saisie libre de lien
   const [isWikiPickerOpen, setIsWikiPickerOpen] = useState(false);
@@ -60,6 +63,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
   const [newBlockType, setNewBlockType] = useState(null); // 'text' ou 'link'
   const [newBlockContent, setNewBlockContent] = useState({ titre: '', url: '', texte: '' });
 
+  // Synchronisation systématique à chaque changement d'événement
   useEffect(() => {
     if (event) {
       setDescription(event.description || '');
@@ -76,15 +80,25 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       setCartes(cartesList);
       setActiveTab(cartesList.length > 0 ? 'archives' : 'moderne');
 
-      // Chargement des coordonnées existantes
-      setCoords({
-        latitude: event.latitude !== null && event.latitude !== undefined ? Number(event.latitude) : null,
-        longitude: event.longitude !== null && event.longitude !== undefined ? Number(event.longitude) : null
-      });
+      // Chargement sécurisé de la liste des lieux
+      const listeLieux = Array.isArray(event.lieux) ? event.lieux : [];
+      setLieux(listeLieux);
 
+      // Si des lieux existent mais pas de coords principales, on prend le 1er lieu
+      const initialLat = event.latitude !== null && event.latitude !== undefined && !isNaN(event.latitude)
+        ? Number(event.latitude)
+        : (listeLieux[0] ? Number(listeLieux[0].latitude) : null);
+
+      const initialLng = event.longitude !== null && event.longitude !== undefined && !isNaN(event.longitude)
+        ? Number(event.longitude)
+        : (listeLieux[0] ? Number(listeLieux[0].longitude) : null);
+
+      setCoords({ latitude: initialLat, longitude: initialLng });
+      setVilleSelectionnee(null);
+      setNouveauRole('');
       setSaveMessage('');
 
-      // Chargement des étapes du fil conducteur s'il existe
+      // Chargement des étapes du fil conducteur
       if (event.groupe_id) {
         setLoadingGroup(true);
         supabase
@@ -104,17 +118,27 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     }
   }, [event]);
 
-  const hasCoords = coords.latitude !== null && coords.longitude !== null && !isNaN(coords.latitude);
-  const position = hasCoords ? [coords.latitude, coords.longitude] : [41.9028, 12.4964];
-  const zoom = Number(event.zoom_niveau) || (hasCoords ? 7 : 4);
+  // Position par défaut
+  const hasCoords = (coords.latitude !== null && coords.longitude !== null && !isNaN(coords.latitude)) || (lieux.length > 0);
+  const position = lieux.length > 0
+    ? [Number(lieux[0].latitude), Number(lieux[0].longitude)]
+    : (coords.latitude !== null ? [coords.latitude, coords.longitude] : [41.9028, 12.4964]);
+  const zoom = Number(event.zoom_niveau) || (hasCoords ? 6 : 4);
 
   const anneeAffichee = event.date_debut < 0
     ? `${Math.abs(event.date_debut)} BCE`
     : `${event.date_debut} CE`;
 
-  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description, updatedCoords = coords) => {
+  // Fonction de sauvegarde globale vers Supabase et mise à jour de l'objet mémoire
+  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description, updatedCoords = coords, updatedLieux = lieux) => {
     setIsSaving(true);
     setSaveMessage('');
+
+    // Si on a des lieux, on s'assure que les coords principales de l'événement sont toujours calées sur le 1er lieu
+    const finalCoords = {
+      latitude: updatedLieux.length > 0 ? Number(updatedLieux[0].latitude) : updatedCoords.latitude,
+      longitude: updatedLieux.length > 0 ? Number(updatedLieux[0].longitude) : updatedCoords.longitude
+    };
 
     const payload = {
       description: updatedDesc.trim() || null,
@@ -122,8 +146,9 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       cartes_historiques: updatedCartes,
       carte_historique_url: updatedCartes[0]?.url || null,
       carte_legende: updatedCartes[0]?.titre || null,
-      latitude: updatedCoords.latitude,
-      longitude: updatedCoords.longitude
+      latitude: finalCoords.latitude,
+      longitude: finalCoords.longitude,
+      lieux: updatedLieux
     };
 
     const { error } = await supabase
@@ -136,6 +161,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       setSaveMessage('Erreur');
     } else {
       setSaveMessage('Enregistré ✓');
+      // Mise à jour de l'objet event en mémoire pour qu'il ne se perde pas au changement
       event.description = payload.description;
       event.references_bento = payload.references_bento;
       event.cartes_historiques = payload.cartes_historiques;
@@ -143,18 +169,63 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
       event.carte_legende = payload.carte_legende;
       event.latitude = payload.latitude;
       event.longitude = payload.longitude;
+      event.lieux = payload.lieux;
+      setCoords(finalCoords);
       setTimeout(() => setSaveMessage(''), 2000);
     }
   };
 
-  // Mise à jour de la ville depuis le CityPicker
-  const handleLocationSelect = ({ latitude, longitude }) => {
+  // Sélection temporaire depuis le CityPicker
+  const handleLocationSelect = (loc) => {
+    if (!loc || loc.latitude === null) {
+      setVilleSelectionnee(null);
+      return;
+    }
+    setVilleSelectionnee(loc);
+  };
+
+  // Ajout du point à la liste
+  const handleAddLieu = (e) => {
+    if (e) e.preventDefault();
+    if (!villeSelectionnee) return;
+
+    const nomDetecte = villeSelectionnee.name 
+      || villeSelectionnee.nom 
+      || villeSelectionnee.ville 
+      || villeSelectionnee.label 
+      || (typeof villeSelectionnee === 'string' ? villeSelectionnee : 'Lieu');
+
+    const point = {
+      id: Date.now(),
+      nom: nomDetecte,
+      role: nouveauRole.trim() || 'Lieu associé',
+      latitude: Number(villeSelectionnee.latitude),
+      longitude: Number(villeSelectionnee.longitude)
+    };
+
+    const nextLieux = [...lieux, point];
+    setLieux(nextLieux);
+    setVilleSelectionnee(null);
+    setNouveauRole('');
+
     const nextCoords = {
-      latitude: latitude !== null ? Number(latitude) : null,
-      longitude: longitude !== null ? Number(longitude) : null
+      latitude: Number(point.latitude),
+      longitude: Number(point.longitude)
     };
     setCoords(nextCoords);
-    handleSave(blocs, cartes, description, nextCoords);
+
+    handleSave(blocs, cartes, description, nextCoords, nextLieux);
+  };
+
+  // Suppression d'un point
+  const handleRemoveLieu = (lieuId) => {
+    const nextLieux = lieux.filter(l => l.id !== lieuId);
+    setLieux(nextLieux);
+    const nextCoords = nextLieux.length > 0 
+      ? { latitude: Number(nextLieux[0].latitude), longitude: Number(nextLieux[0].longitude) }
+      : { latitude: null, longitude: null };
+    setCoords(nextCoords);
+    handleSave(blocs, cartes, description, nextCoords, nextLieux);
   };
 
   // Réception de l'image sélectionnée dans la modale Wikimedia
@@ -162,7 +233,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     const nextList = [...cartes, nouvelleCarte];
     setCartes(nextList);
     setActiveTab('archives');
-    handleSave(blocs, nextList, description, coords);
+    handleSave(blocs, nextList, description, coords, lieux);
   };
 
   // Ajout par URL manuelle
@@ -180,13 +251,13 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     setDirectCardTitre('');
     setIsAddingDirectUrl(false);
     setActiveTab('archives');
-    handleSave(blocs, nextList, description, coords);
+    handleSave(blocs, nextList, description, coords, lieux);
   };
 
   const handleRemoveCard = (index) => {
     const nextList = cartes.filter((_, i) => i !== index);
     setCartes(nextList);
-    handleSave(blocs, nextList, description, coords);
+    handleSave(blocs, nextList, description, coords, lieux);
   };
 
   // Ajout / Suppression de bloc libre
@@ -203,13 +274,13 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     setBlocs(nextBlocs);
     setNewBlockType(null);
     setNewBlockContent({ titre: '', url: '', texte: '' });
-    handleSave(nextBlocs, cartes, description, coords);
+    handleSave(nextBlocs, cartes, description, coords, lieux);
   };
 
   const handleRemoveBlock = (blockId) => {
     const nextBlocs = blocs.filter(b => b.id !== blockId);
     setBlocs(nextBlocs);
-    handleSave(nextBlocs, cartes, description, coords);
+    handleSave(nextBlocs, cartes, description, coords, lieux);
   };
 
   return (
@@ -315,7 +386,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
           </div>
         </div>
 
-        {/* Corps : Gauche (Documents & Cartes) / Droite (Blocs libres) */}
+        {/* Corps */}
         <div
           style={{
             flex: 1,
@@ -564,29 +635,98 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               </div>
             )}
 
-            {/* VUE 2 : CARTE MODERNE + SÉLECTEUR DE VILLES FLOTTANT */}
+            {/* VUE 2 : CARTE MODERNE MULTI-POINTS */}
             {activeTab === 'moderne' && (
               <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
                 <div
                   style={{
                     position: 'absolute',
                     top: 10,
-                    left: 10,
-                    right: 10,
+                    left: 54,
+                    width: 320,
+                    maxWidth: 'calc(100% - 70px)',
                     zIndex: 1000,
                     backgroundColor: 'rgba(255, 255, 255, 0.95)',
                     backdropFilter: 'blur(8px)',
-                    padding: '8px 12px',
+                    padding: '8px 10px',
                     borderRadius: 10,
                     border: '1px solid #e7ded0',
-                    boxShadow: '0 4px 12px rgba(44, 34, 22, 0.1)'
+                    boxShadow: '0 4px 12px rgba(44, 34, 22, 0.1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
                   }}
                 >
                   <CityPicker
-                    latitude={coords.latitude}
-                    longitude={coords.longitude}
+                    latitude={villeSelectionnee?.latitude || null}
+                    longitude={villeSelectionnee?.longitude || null}
                     onLocationSelect={handleLocationSelect}
                   />
+
+                  {villeSelectionnee && (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Rôle (ex: Capitale, Port...)"
+                        value={nouveauRole}
+                        onChange={(e) => setNouveauRole(e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #d6cebf',
+                          fontSize: 11,
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddLieu}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 6,
+                          border: 'none',
+                          backgroundColor: '#b45309',
+                          color: '#ffffff',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        + Ajouter
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Badges des points enregistrés */}
+                  {lieux.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 60, overflowY: 'auto' }}>
+                      {lieux.map((l) => (
+                        <span
+                          key={l.id}
+                          style={{
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            backgroundColor: '#f3ece0',
+                            borderRadius: 6,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            color: '#44403c'
+                          }}
+                        >
+                          <strong>{l.nom}</strong> ({l.role})
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLieu(l.id)}
+                            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#e11d48', fontSize: 10 }}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <MapContainer
@@ -596,11 +736,24 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                 >
                   <MapController center={position} zoom={zoom} />
                   <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom'
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
                   />
-                  {hasCoords && (
-                    <Marker position={position} icon={defaultIcon}>
+
+                  {/* Marqueurs multiples */}
+                  {lieux.map((l) => (
+                    <Marker key={l.id} position={[Number(l.latitude), Number(l.longitude)]} icon={defaultIcon}>
+                      <Popup>
+                        <strong>{l.nom}</strong>
+                        <br />
+                        <span style={{ fontSize: 11, color: '#b45309' }}>{l.role}</span>
+                      </Popup>
+                    </Marker>
+                  ))}
+
+                  {/* Marqueur unique de secours si aucun lieu dans la liste mais coordonnées existantes */}
+                  {lieux.length === 0 && hasCoords && coords.latitude !== null && (
+                    <Marker position={[coords.latitude, coords.longitude]} icon={defaultIcon}>
                       <Popup>
                         <strong>{event.titre}</strong>
                       </Popup>
@@ -621,7 +774,7 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               overflowY: 'auto'
             }}
           >
-            {/* 1. ÉTAPES DU FIL CONDUCTEUR (SI GROUPE EXISTANT) */}
+            {/* 1. ÉTAPES DU FIL CONDUCTEUR */}
             {event.groupe_id && (
               <div
                 style={{
