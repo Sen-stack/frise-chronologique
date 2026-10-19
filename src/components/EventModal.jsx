@@ -450,6 +450,43 @@ export default function EventModal({
                   </div>
                 </div>
               </div>
+
+              {/* 4. Opacité du remplissage */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>
+                    Opacité du fond
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#b45309' }}>
+                    {Math.round((formData.opacite ?? 0.85) * 100)} %
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                  {[0.25, 0.50, 0.75, 1.0].map((val) => {
+                    const isSelected = (formData.opacite ?? 0.85) === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, opacite: val }))}
+                        style={{
+                          padding: '4px 0',
+                          fontSize: 10,
+                          fontWeight: 600,
+                          border: 'none',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          backgroundColor: isSelected ? '#b45309' : '#eae3d5',
+                          color: isSelected ? '#ffffff' : '#78716c',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {Math.round(val * 100)} %
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 

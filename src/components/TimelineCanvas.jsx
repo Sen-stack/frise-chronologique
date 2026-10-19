@@ -341,7 +341,7 @@ export default function TimelineCanvas() {
       const transitionW = 35;
 
       ctx.save();
-      ctx.fillStyle = isSelected ? style.stroke : style.fill;
+      ctx.fillStyle = isSelected ? style.stroke : (p.couleur || style.stroke || style.fill);
       ctx.strokeStyle = isSelected ? '#ffffff' : (p.couleur || style.stroke);
       ctx.lineWidth = isSelected ? 2.5 : (p.forme === 'ligne' ? 2 : 1.2);
 
@@ -358,7 +358,7 @@ export default function TimelineCanvas() {
       const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
       rectTop = isTop ? yBase - trackH : yBase;
 
-      // --- 1. FORME LIGNE FINE |—| (Ex. Biographie) ---
+      // --- CAS 1 : FORME LIGNE FINE |—| (Pas de fond, juste le trait) ---
       if (p.forme === 'ligne') {
         const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
         const tickH = Math.max(6, trackH * 0.4);
@@ -367,17 +367,17 @@ export default function TimelineCanvas() {
         // Ligne horizontale
         ctx.moveTo(rX, lineY);
         ctx.lineTo(rX + rW, lineY);
-        // Borne de début |
+        // Borne gauche |
         ctx.moveTo(rX, lineY - tickH / 2);
         ctx.lineTo(rX, lineY + tickH / 2);
-        // Borne de fin |
+        // Borne droite |
         ctx.moveTo(rX + rW, lineY - tickH / 2);
         ctx.lineTo(rX + rW, lineY + tickH / 2);
         ctx.stroke();
 
         rectH = trackH;
       }
-      // --- 2. BANDEAU CLASSIQUE OU RUBAN AVEC VIRAGE EN S ---
+      // --- CAS 2 : BANDEAU AVEC VIRAGE EN S (Remplissage avec opacité) ---
       else if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin) {
         const xSplit = yearToX(p.dropYear);
         const xTransEnd = Math.min(rX + rW, xSplit + transitionW);
@@ -408,13 +408,19 @@ export default function TimelineCanvas() {
         ctx.arcTo(rX, yL1, rX, yL1 + dir * trackH, radius);
         ctx.arcTo(rX, yL1 + dir * trackH, rX + radius, yL1 + dir * trackH, radius);
         ctx.closePath();
+
+        // Application de l'opacité sur le fond uniquement
+        ctx.save();
+        ctx.globalAlpha = p.opacite ?? 0.85;
         ctx.fill();
+        ctx.restore();
+
         ctx.stroke();
 
         rectTop = Math.min(yL0, yL1 + dir * trackH);
         rectH = Math.abs(yL1 - yL0) + trackH;
       } 
-      // --- 3. RECTANGLE BANDEAU OU RUBAN DROIT ---
+      // --- CAS 3 : RECTANGLE OU RUBAN DROIT (Remplissage avec opacité) ---
       else {
         const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
 
@@ -424,7 +430,13 @@ export default function TimelineCanvas() {
         } else {
           ctx.rect(rX, rectTop, rW, trackH);
         }
+
+        // Application de l'opacité sur le fond uniquement
+        ctx.save();
+        ctx.globalAlpha = p.opacite ?? 0.85;
         ctx.fill();
+        ctx.restore();
+
         ctx.stroke();
       }
 
@@ -437,7 +449,7 @@ export default function TimelineCanvas() {
         evt: p
       });
 
-      // Libellé de la période : centré verticalement dans son propre rectangle
+      // Libellé de la période : centré verticalement dans son rectangle
       if (rW > 30) {
         ctx.save();
         ctx.beginPath();
