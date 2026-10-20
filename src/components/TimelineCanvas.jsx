@@ -45,15 +45,16 @@ export default function TimelineCanvas() {
   const [availableTags, setAvailableTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [newTagInput, setNewTagInput] = useState('');
 
-  // Répertoire des fils conducteurs
+  // Répertoire des fils conducteurs / thématiques
   const [availableGroups, setAvailableGroups] = useState([]);
   const [newGroupInput, setNewGroupInput] = useState('');
 
-  // Filtres
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  // Volet d'infos & filtres à gauche
+  const [isFilterOpen, setIsFilterOpen] = useState(true);
   const [selectedTags, setSelectedTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
+  const [selectedGroups, setSelectedGroups] = useState([]);
   const [customSelectedIds, setCustomSelectedIds] = useState(new Set());
-  const [filterMode, setFilterMode] = useState('tags');
+  const [filterMode, setFilterMode] = useState('tags'); // 'tags' | 'groups' | 'custom'
   const [searchQuery, setSearchQuery] = useState('');
 
   // Split View haut
@@ -150,10 +151,20 @@ export default function TimelineCanvas() {
   const eventsRef = useRef(events);
   useEffect(() => { eventsRef.current = events; }, [events]);
 
-  const filterRef = useRef({ mode: filterMode, tags: selectedTags, customIds: customSelectedIds });
+  const filterRef = useRef({
+    mode: filterMode,
+    tags: selectedTags,
+    groups: selectedGroups,
+    customIds: customSelectedIds
+  });
   useEffect(() => {
-    filterRef.current = { mode: filterMode, tags: selectedTags, customIds: customSelectedIds };
-  }, [filterMode, selectedTags, customSelectedIds]);
+    filterRef.current = {
+      mode: filterMode,
+      tags: selectedTags,
+      groups: selectedGroups,
+      customIds: customSelectedIds
+    };
+  }, [filterMode, selectedTags, selectedGroups, customSelectedIds]);
 
   const hitboxesRef = useRef([]);
 
@@ -185,108 +196,51 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
-  // Moteur d'empilement avec cascade continue (chute palier par palier)
+  // Algorithme d'empilement avec gravité stricte
   const computeGravityTracks = (periodesList) => {
-    const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || a.date_fin - b.date_fin);
-
-    const lanesTop = [];
-    const lanesBottom = [];
-
-    const isSlotFree = (lane, start, end) => {
-      if (!lane) return true;
-      return !lane.some(seg => Math.max(seg.start, start) < Math.min(seg.end, end));
-    };
+    const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - a.date_fin));
+    const occupiedTop = [];
+    const occupiedBottom = [];
 
     return sorted.map((p, idx) => {
       let side = p.cote ? p.cote : ((idx % 2 === 0) ? 'top' : 'bottom');
-      let currentLanes = side === 'top' ? lanesTop : lanesBottom;
+      let tracks = side === 'top' ? occupiedTop : occupiedBottom;
 
-      // Mode Fixe (sans gravité)
       if (p.gravite === false) {
-        let fixedLvl = 0;
-        while (!isSlotFree(currentLanes[fixedLvl], p.date_debut, p.date_fin)) {
-          fixedLvl++;
+        let fixedLevel = 0;
+        while (tracks[fixedLevel] !== undefined && tracks[fixedLevel] > p.date_debut) {
+          fixedLevel++;
         }
-        if (!currentLanes[fixedLvl]) currentLanes[fixedLvl] = [];
-        currentLanes[fixedLvl].push({ start: p.date_debut, end: p.date_fin });
-        return {
-          ...p,
-          side,
-          segments: [{ start: p.date_debut, end: p.date_fin, level: fixedLvl }]
-        };
+        tracks[fixedLevel] = p.date_fin;
+        return { ...p, side, level: fixedLevel, dropYear: null };
       }
 
-      // Équilibrage initial
+      let level = 0;
+      while (tracks[level] !== undefined && tracks[level] > p.date_debut) {
+        level++;
+      }
+
       const altSide = side === 'top' ? 'bottom' : 'top';
-      const altLanes = altSide === 'top' ? lanesTop : lanesBottom;
-
-      let startLvl = 0;
-      while (!isSlotFree(currentLanes[startLvl], p.date_debut, p.date_debut + 0.1)) {
-        startLvl++;
+      const altTracks = altSide === 'top' ? occupiedTop : occupiedBottom;
+      let altLevel = 0;
+      while (altTracks[altLevel] !== undefined && altTracks[altLevel] > p.date_debut) {
+        altLevel++;
       }
 
-      let altStartLvl = 0;
-      while (!isSlotFree(altLanes[altStartLvl], p.date_debut, p.date_debut + 0.1)) {
-        altStartLvl++;
-      }
-
-      if (altStartLvl < startLvl) {
+      if (altLevel < level) {
         side = altSide;
-        currentLanes = altLanes;
-        startLvl = altStartLvl;
+        tracks = altTracks;
+        level = altLevel;
       }
 
-      // Découpage en tranches d'années successives pour descendre à chaque libération
-      const criticalYears = new Set([p.date_debut, p.date_fin]);
-      currentLanes.forEach(lane => {
-        if (!lane) return;
-        lane.forEach(seg => {
-          if (seg.end > p.date_debut && seg.end < p.date_fin) {
-            criticalYears.add(seg.end);
-          }
-        });
-      });
-
-      const sortedMilestones = Array.from(criticalYears).sort((a, b) => a - b);
-      const segments = [];
-      let currentLevel = startLvl;
-
-      for (let i = 0; i < sortedMilestones.length - 1; i++) {
-        const segStart = sortedMilestones[i];
-        const segEnd = sortedMilestones[i + 1];
-
-        // Gravité : on tente de descendre le plus bas possible
-        let bestLevel = currentLevel;
-        for (let target = 0; target <= currentLevel; target++) {
-          if (isSlotFree(currentLanes[target], segStart, segEnd)) {
-            bestLevel = target;
-            break;
-          }
-        }
-
-        currentLevel = bestLevel;
-        segments.push({ start: segStart, end: segEnd, level: currentLevel });
-
-        if (!currentLanes[currentLevel]) currentLanes[currentLevel] = [];
-        currentLanes[currentLevel].push({ start: segStart, end: segEnd });
+      let dropYear = null;
+      if (level > 0 && tracks[level - 1] !== undefined && tracks[level - 1] > p.date_debut && tracks[level - 1] < p.date_fin) {
+        dropYear = tracks[level - 1];
+        tracks[level - 1] = p.date_fin;
       }
 
-      // Fusion des segments consécutifs qui restent sur le même niveau
-      const fusedSegments = [];
-      segments.forEach(seg => {
-        const last = fusedSegments[fusedSegments.length - 1];
-        if (last && last.level === seg.level && Math.abs(last.end - seg.start) < 0.001) {
-          last.end = seg.end;
-        } else {
-          fusedSegments.push({ ...seg });
-        }
-      });
-
-      return {
-        ...p,
-        side,
-        segments: fusedSegments
-      };
+      tracks[level] = p.date_fin;
+      return { ...p, side, level, dropYear };
     });
   };
 
@@ -320,7 +274,6 @@ export default function TimelineCanvas() {
     const basePadding = Math.round(4 + zoomFactor * 3);
     const periodFontSize = Math.round(10 + zoomFactor * 2.5);
 
-    // Largeur fixe originale de la frise ardoise
     const defaultHalfH = Math.round((isMobile ? 24 : 26) + zoomFactor * (isMobile ? 18 : 28));
 
     const xStart = yearToX(GLOBAL_MIN);
@@ -333,6 +286,10 @@ export default function TimelineCanvas() {
       if (activeFilter.mode === 'custom') {
         return activeFilter.customIds.has(evt.id);
       }
+      if (activeFilter.mode === 'groups') {
+        const group = (evt.groupe_id && typeof evt.groupe_id === 'string') ? evt.groupe_id.trim() : null;
+        return group ? activeFilter.groups.includes(group) : false;
+      }
       const itemTags = Array.isArray(evt.tags) && evt.tags.length > 0 ? evt.tags : [evt.categorie || "Sans tag"];
       return itemTags.some(tag => activeFilter.tags.includes(tag));
     });
@@ -342,7 +299,7 @@ export default function TimelineCanvas() {
 
     const gravityPeriodes = computeGravityTracks(rawPeriodes);
 
-    // Corps de la frise minérale ardoise
+    // Corps de la frise minérale
     const visibleX1 = Math.max(-60, xStart);
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
@@ -400,7 +357,7 @@ export default function TimelineCanvas() {
       ctx.stroke();
     }
 
-    // Tracé des Périodes avec cascade multi-segments
+    // Dessin des périodes
     gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
@@ -413,7 +370,9 @@ export default function TimelineCanvas() {
       const isSelected = (selectedEvent && selectedEvent.id === p.id) || (splitEvent && splitEvent.id === p.id);
       const isTop = p.side === 'top';
       const dir = isTop ? -1 : 1;
-      const transitionW = 32;
+
+      // Paramètres du virage : largeur basée sur la hauteur du bandeau pour une courbe naturelle
+      const transitionW = Math.max(16, trackH * 1.1);
 
       ctx.save();
       ctx.fillStyle = isSelected ? style.stroke : (p.couleur || style.stroke || style.fill);
@@ -426,174 +385,137 @@ export default function TimelineCanvas() {
         ctx.setLineDash([]);
       }
 
-      const segs = p.segments && p.segments.length > 0
-        ? p.segments
-        : [{ start: p.date_debut, end: p.date_fin, level: 0 }];
+      let rectTop = 0;
+      let rectH = trackH;
 
-      // Calcul des coordonnées pour chaque tronçon
-      const pieces = segs.map(s => {
-        const sx = yearToX(s.start);
-        const ex = yearToX(s.end);
-        const yBase = barY + dir * (basePadding + s.level * (trackH + 3));
-        const yTop = isTop ? yBase - trackH : yBase;
-        return {
-          sx,
-          ex,
-          w: Math.max(2, ex - sx),
-          yTop,
-          yBottom: yTop + trackH,
-          level: s.level
-        };
-      });
+      const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
+      rectTop = isTop ? yBase - trackH : yBase;
 
-      // 1. FORME LIGNE FINE
-      if (p.forme === 'ligne') {
-        ctx.beginPath();
-        pieces.forEach((pc, i) => {
-          const lineY = isTop ? pc.yTop + trackH * 0.75 : pc.yTop + trackH * 0.25;
-          ctx.moveTo(pc.sx, lineY);
-          ctx.lineTo(pc.ex, lineY);
+      // Règle de matière suffisante :
+      // Vérifier si la distance restante après la fin de l'obstacle est suffisante (>= trackH)
+      let canDrop = false;
+      let xSplit = 0;
+      let remainingWAfterDrop = 0;
 
-          if (i === 0) {
-            ctx.moveTo(pc.sx, lineY - 4);
-            ctx.lineTo(pc.sx, lineY + 4);
-          }
-          if (i === pieces.length - 1) {
-            ctx.moveTo(pc.ex, lineY - 4);
-            ctx.lineTo(pc.ex, lineY + 4);
-          }
-
-          hitboxesRef.current.push({
-            type: 'rect',
-            x: pc.sx,
-            y: pc.yTop,
-            w: pc.w,
-            h: trackH,
-            evt: p
-          });
-        });
-        ctx.stroke();
-      }
-      // 2. FORME BANDEAU EN CASCADE CONTINUE
-      else {
-        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
-
-        if (pieces.length === 1) {
-          const pc = pieces[0];
-          ctx.beginPath();
-          if (ctx.roundRect) {
-            ctx.roundRect(pc.sx, pc.yTop, pc.w, trackH, radius);
-          } else {
-            ctx.rect(pc.sx, pc.yTop, pc.w, trackH);
-          }
-          ctx.save();
-          ctx.globalAlpha = p.opacite ?? 0.85;
-          ctx.fill();
-          ctx.restore();
-          ctx.stroke();
-
-          hitboxesRef.current.push({
-            type: 'rect',
-            x: pc.sx,
-            y: pc.yTop,
-            w: pc.w,
-            h: trackH,
-            evt: p
-          });
-        } else {
-          // Tracé continu multi-virages en S
-          ctx.beginPath();
-
-          // Bord supérieur de gauche à droite
-          for (let i = 0; i < pieces.length; i++) {
-            const cur = pieces[i];
-            const next = pieces[i + 1];
-
-            if (i === 0) {
-              ctx.moveTo(cur.sx + radius, cur.yTop);
-            }
-
-            if (next) {
-              const xTransStart = Math.max(cur.sx, next.sx - transitionW / 2);
-              const xTransEnd = Math.min(next.ex, next.sx + transitionW / 2);
-              ctx.lineTo(xTransStart, cur.yTop);
-              ctx.bezierCurveTo(
-                (xTransStart + xTransEnd) / 2, cur.yTop,
-                (xTransStart + xTransEnd) / 2, next.yTop,
-                xTransEnd, next.yTop
-              );
-            } else {
-              ctx.lineTo(cur.ex - radius, cur.yTop);
-              ctx.arcTo(cur.ex, cur.yTop, cur.ex, cur.yTop + radius, radius);
-              ctx.arcTo(cur.ex, cur.yBottom, cur.ex - radius, cur.yBottom, radius);
-            }
-          }
-
-          // Bord inférieur de droite à gauche
-          for (let i = pieces.length - 1; i >= 0; i--) {
-            const cur = pieces[i];
-            const prev = pieces[i - 1];
-
-            if (prev) {
-              const xTransStart = Math.min(cur.ex, cur.sx + transitionW / 2);
-              const xTransEnd = Math.max(prev.sx, cur.sx - transitionW / 2);
-              ctx.lineTo(xTransStart, cur.yBottom);
-              ctx.bezierCurveTo(
-                (xTransStart + xTransEnd) / 2, cur.yBottom,
-                (xTransStart + xTransEnd) / 2, prev.yBottom,
-                xTransEnd, prev.yBottom
-              );
-            } else {
-              ctx.lineTo(cur.sx + radius, cur.yBottom);
-              ctx.arcTo(cur.sx, cur.yBottom, cur.sx, cur.yBottom - radius, radius);
-              ctx.arcTo(cur.sx, cur.yTop, cur.sx + radius, cur.yTop, radius);
-            }
-          }
-
-          ctx.closePath();
-          ctx.save();
-          ctx.globalAlpha = p.opacite ?? 0.85;
-          ctx.fill();
-          ctx.restore();
-          ctx.stroke();
-
-          // Hitboxes découpées strictement par morceau pour éviter tout clic dans le vide
-          pieces.forEach((pc, idx) => {
-            let segX = pc.sx;
-            let segW = pc.w;
-
-            if (idx > 0) {
-              segX += transitionW / 2;
-              segW -= transitionW / 2;
-            }
-            if (idx < pieces.length - 1) {
-              segW -= transitionW / 2;
-            }
-
-            hitboxesRef.current.push({
-              type: 'rect',
-              x: segX,
-              y: pc.yTop,
-              w: Math.max(4, segW),
-              h: trackH,
-              evt: p
-            });
-          });
+      if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin && p.level > 0) {
+        xSplit = yearToX(p.dropYear);
+        remainingWAfterDrop = (rX + rW) - xSplit;
+        // Si largeur après obstacle >= trackH, on peut descendre
+        if (remainingWAfterDrop >= trackH) {
+          canDrop = true;
         }
       }
 
-      // Libellé de la période : centré sur le premier tronçon
+      // 1. FORME LIGNE FINE
+      if (p.forme === 'ligne') {
+        const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
+        const tickH = Math.max(6, trackH * 0.4);
+
+        ctx.beginPath();
+        ctx.moveTo(rX, lineY);
+        ctx.lineTo(rX + rW, lineY);
+        ctx.moveTo(rX, lineY - tickH / 2);
+        ctx.lineTo(rX, lineY + tickH / 2);
+        ctx.moveTo(rX + rW, lineY - tickH / 2);
+        ctx.lineTo(rX + rW, lineY + tickH / 2);
+        ctx.stroke();
+
+        rectH = trackH;
+      }
+      // 2. FORME BANDEAU AVEC VIRAGE EN S (si matière suffisante)
+      else if (canDrop) {
+        const actualTransW = Math.min(transitionW, remainingWAfterDrop * 0.8);
+        const xTransStart = xSplit; // Démarre STRICTEMENT à la libération, pas avant
+        const xTransEnd = xSplit + actualTransW;
+
+        const targetLvl = p.level - 1;
+        const yStart = barY + dir * (basePadding + p.level * (trackH + 3));
+        const yEnd = barY + dir * (basePadding + targetLvl * (trackH + 3));
+        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
+
+        ctx.beginPath();
+
+        // 1. Départ bord haut/extérieur
+        ctx.moveTo(rX + radius, yStart + dir * trackH);
+        ctx.lineTo(xTransStart, yStart + dir * trackH);
+
+        // 2. Courbe vers le bas
+        ctx.bezierCurveTo(
+          xTransStart + actualTransW * 0.5, yStart + dir * trackH,
+          xTransStart + actualTransW * 0.5, yEnd + dir * trackH,
+          xTransEnd, yEnd + dir * trackH
+        );
+
+        // 3. Vers la fin droite
+        ctx.lineTo(rX + rW - radius, yEnd + dir * trackH);
+        ctx.arcTo(rX + rW, yEnd + dir * trackH, rX + rW, yEnd, radius);
+        ctx.arcTo(rX + rW, yEnd, rX + rW - radius, yEnd, radius);
+
+        // 4. Retour bord intérieur vers la gauche
+        ctx.lineTo(xTransEnd, yEnd);
+        ctx.bezierCurveTo(
+          xTransStart + actualTransW * 0.5, yEnd,
+          xTransStart + actualTransW * 0.5, yStart,
+          xTransStart, yStart
+        );
+
+        // 5. Vers le début gauche
+        ctx.lineTo(rX + radius, yStart);
+        ctx.arcTo(rX, yStart, rX, yStart + dir * trackH, radius);
+        ctx.arcTo(rX, yStart + dir * trackH, rX + radius, yStart + dir * trackH, radius);
+
+        ctx.closePath();
+
+        ctx.save();
+        ctx.globalAlpha = p.opacite ?? 0.85;
+        ctx.fill();
+        ctx.restore();
+
+        ctx.stroke();
+
+        rectTop = Math.min(yStart, yEnd, yStart + dir * trackH, yEnd + dir * trackH);
+        rectH = Math.abs(yStart - yEnd) + trackH;
+      }
+      // 3. BANDEAU DROIT (pas de gravité, ou matière insuffisante pour descendre)
+      else {
+        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
+
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(rX, rectTop, rW, trackH, radius);
+        } else {
+          ctx.rect(rX, rectTop, rW, trackH);
+        }
+
+        ctx.save();
+        ctx.globalAlpha = p.opacite ?? 0.85;
+        ctx.fill();
+        ctx.restore();
+
+        ctx.stroke();
+      }
+
+      // Hitbox
+      hitboxesRef.current.push({
+        type: 'rect',
+        x: rX,
+        y: rectTop,
+        w: rW,
+        h: rectH,
+        evt: p
+      });
+
+      // Libellé de la période : rogné strictement à l'intérieur
       if (rW > 30) {
-        const firstPc = pieces[0];
         ctx.save();
         ctx.beginPath();
-        ctx.rect(firstPc.sx + 2, firstPc.yTop, Math.max(10, firstPc.w - 4), trackH);
+        ctx.rect(rX + 2, rectTop, rW - 4, rectH);
         ctx.clip();
         ctx.fillStyle = '#ffffff';
         ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(p.titre, firstPc.sx + 6, firstPc.yTop + trackH / 2);
+        ctx.fillText(p.titre, rX + 6, rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
         ctx.restore();
       }
 
@@ -693,8 +615,8 @@ export default function TimelineCanvas() {
         type: 'rect',
         x: x - 6,
         y: yT - 14,
-        w: labelW + 8,
-        h: 28,
+        w: labelW + 10,
+        h: 30,
         evt
       });
     });
@@ -828,9 +750,13 @@ export default function TimelineCanvas() {
         });
 
         const listTags = Array.from(extractedTags);
+        const listGroups = Array.from(extractedGroups);
+
         setAvailableTags(listTags);
         setSelectedTags(listTags);
-        setAvailableGroups(Array.from(extractedGroups));
+
+        setAvailableGroups(listGroups);
+        setSelectedGroups(listGroups);
       }
     }
     chargerEvenements();
@@ -844,7 +770,7 @@ export default function TimelineCanvas() {
 
   useEffect(() => {
     drawScene();
-  }, [viewRange, events, selectedTags, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
+  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
 
   // Écouteurs souris et tactile
   useEffect(() => {
@@ -1225,6 +1151,7 @@ export default function TimelineCanvas() {
 
       if (chosenGroup && !availableGroups.includes(chosenGroup)) {
         setAvailableGroups(prev => [...prev, chosenGroup]);
+        setSelectedGroups(prev => [...prev, chosenGroup]);
       }
 
       setIsCreateModalOpen(false);
@@ -1242,7 +1169,7 @@ export default function TimelineCanvas() {
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", touchAction: 'none' }}>
-      
+
       {/* 1. Knowledge Split View */}
       <KnowledgeSplitView
         isOpen={isSplitViewOpen}
@@ -1255,7 +1182,7 @@ export default function TimelineCanvas() {
         style={{
           position: 'absolute',
           top: isSplitViewOpen ? 'calc(50vh + 14px)' : 16,
-          left: 18,
+          left: 48,
           zIndex: 20,
           pointerEvents: 'none',
           display: 'flex',
@@ -1305,23 +1232,6 @@ export default function TimelineCanvas() {
         color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
         transition: 'top 0.25s ease'
       }}>
-        <button
-          type="button"
-          onClick={() => setIsFilterOpen(!isFilterOpen)}
-          style={{
-            padding: '6px 12px',
-            backgroundColor: isFilterOpen ? (currentTheme === 'light' ? '#e4e4e7' : '#334155') : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
-            color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
-            border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-            borderRadius: 8,
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-        >
-          Filtres
-        </button>
-
         <button
           type="button"
           onClick={() => setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
@@ -1402,10 +1312,10 @@ export default function TimelineCanvas() {
         )}
       </div>
 
-      {/* Volet filtres */}
+      {/* 4. Volet principal à gauche */}
       <FilterDrawer
         isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
+        onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
         filterMode={filterMode}
         setFilterMode={setFilterMode}
         availableTags={availableTags}
@@ -1413,8 +1323,12 @@ export default function TimelineCanvas() {
         onToggleTag={(tag) => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
         onSelectAllTags={() => setSelectedTags(availableTags)}
         onDeselectAllTags={() => setSelectedTags([])}
+        availableGroups={availableGroups}
+        selectedGroups={selectedGroups}
+        onToggleGroup={(grp) => setSelectedGroups(prev => prev.includes(grp) ? prev.filter(g => g !== grp) : [...prev, grp])}
+        onSelectAllGroups={() => setSelectedGroups(availableGroups)}
+        onDeselectAllGroups={() => setSelectedGroups([])}
         events={events}
-        searchedEvents={events.filter(e => e.titre.toLowerCase().includes(searchQuery.toLowerCase()))}
         customSelectedIds={customSelectedIds}
         onToggleCustomEvent={(id) => setCustomSelectedIds(prev => {
           const next = new Set(prev);
@@ -1426,6 +1340,7 @@ export default function TimelineCanvas() {
         onDeselectAllCustom={() => setCustomSelectedIds(new Set())}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        currentTheme={currentTheme}
       />
 
       {/* Pop-up aperçu rapide */}
@@ -1482,6 +1397,7 @@ export default function TimelineCanvas() {
           if (!trimmed) return;
           if (!availableGroups.includes(trimmed)) {
             setAvailableGroups(prev => [...prev, trimmed]);
+            setSelectedGroups(prev => [...prev, trimmed]);
           }
           setFormData(prev => ({ ...prev, groupe_id: trimmed }));
           setNewGroupInput('');
