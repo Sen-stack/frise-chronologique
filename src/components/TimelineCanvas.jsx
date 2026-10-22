@@ -63,6 +63,8 @@ export default function TimelineCanvas() {
   const [mapLayers, setMapLayers] = useState({
     worldEmpires: true,
     subDivisions: true,
+    tradeRoutes: false,
+    ancientCities: false,
     markers: true
   });
 
@@ -315,7 +317,7 @@ export default function TimelineCanvas() {
 
     const gravityPeriodes = computeGravityTracks(rawPeriodes);
 
-    // Corps de la frise minérale
+    // Corps minéral
     const visibleX1 = Math.max(-60, xStart);
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
@@ -653,14 +655,13 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // 3. CURSEUR TEMPOREL ÉLÉGANT DE L'ATLAS (Traverse la frise)
+    // Curseur de l'Atlas
     if (isAtlasOpen && atlasActiveYear !== null) {
       const atlasX = yearToX(atlasActiveYear);
 
       if (atlasX >= -100 && atlasX <= w + 100) {
         ctx.save();
 
-        // Halo lumineux doux
         const gradient = ctx.createLinearGradient(atlasX - 18, 0, atlasX + 18, 0);
         gradient.addColorStop(0, 'rgba(180, 83, 9, 0)');
         gradient.addColorStop(0.5, 'rgba(180, 83, 9, 0.18)');
@@ -668,7 +669,6 @@ export default function TimelineCanvas() {
         ctx.fillStyle = gradient;
         ctx.fillRect(atlasX - 18, 0, 36, h);
 
-        // Ligne verticale néo-classique
         ctx.strokeStyle = '#b45309';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
@@ -678,7 +678,6 @@ export default function TimelineCanvas() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Balise supérieure flottante
         const labelText = `🏛️ Carte : ${formatYear(atlasActiveYear)}`;
         ctx.font = 'bold 10px system-ui, sans-serif';
         const labelW = ctx.measureText(labelText).width + 16;
@@ -697,7 +696,6 @@ export default function TimelineCanvas() {
         }
         ctx.fill();
 
-        // Pointe vers le bas
         ctx.beginPath();
         ctx.moveTo(atlasX - 4, badgeY + 20);
         ctx.lineTo(atlasX, badgeY + 24);
@@ -751,7 +749,6 @@ export default function TimelineCanvas() {
       }
     });
 
-    // Curseur sur la minimap
     if (isAtlasOpen && atlasActiveYear !== null) {
       const atlasMiniX = yearToMiniX(atlasActiveYear, mw);
       mctx.fillStyle = '#b45309';
@@ -1268,14 +1265,14 @@ export default function TimelineCanvas() {
         </div>
       )}
 
-      {/* 2. Slide-over lateral droit (Encyclopédie & savoir) */}
+      {/* 2. Slide-over lateral droit */}
       <KnowledgeSplitView
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         event={drawerEvent}
       />
 
-      {/* 3. Indicateur de date en haut à gauche de la frise */}
+      {/* 3. Indicateur de date */}
       <div
         style={{
           position: 'absolute',
@@ -1330,7 +1327,6 @@ export default function TimelineCanvas() {
         color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
         transition: 'top 0.25s ease'
       }}>
-        {/* Bascule escamotage Atlas */}
         <button
           type="button"
           onClick={() => setIsAtlasOpen(prev => !prev)}
@@ -1462,7 +1458,7 @@ export default function TimelineCanvas() {
         onToggleMapLayer={handleToggleMapLayer}
       />
 
-      {/* Pop-up aperçu rapide ancrée au-dessus du repère sur la frise */}
+      {/* Pop-up aperçu rapide ancrée */}
       {selectedEvent && (() => {
         const span = viewRange.max - viewRange.min;
         if (span <= 0) return null;
@@ -1545,7 +1541,7 @@ export default function TimelineCanvas() {
         }}
       />
 
-      {/* Volet latéral droit d'édition */}
+      {/* Volet d'édition */}
       <EventEditDrawer
         isOpen={isEditDrawerOpen}
         onClose={() => setIsEditDrawerOpen(false)}
@@ -1557,7 +1553,7 @@ export default function TimelineCanvas() {
         availableGroups={availableGroups}
       />
 
-      {/* Zone Canvas frise (remplit le bas ou 100% si Atlas replié) */}
+      {/* Canvas frise */}
       <div style={{
         position: 'absolute',
         bottom: 70,
@@ -1571,7 +1567,7 @@ export default function TimelineCanvas() {
         <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       </div>
 
-      {/* Minimap basse */}
+      {/* Minimap */}
       <div style={{
         position: 'absolute',
         bottom: 0,

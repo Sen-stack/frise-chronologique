@@ -4,7 +4,198 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatYear } from '../utils/timelineMath.js';
 
-// Icônes personnalisées
+// Fonds cartographiques 100% ouverts sans inscription ni clé d'API
+const BASE_MAPS = {
+  topo: {
+    name: 'Topographie',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; National Geographic',
+    maxZoom: 12
+  },
+  neutre: {
+    name: 'Neutre',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+    maxZoom: 16
+  }
+};
+
+// 1. Tracé vectoriel natif des grands axes de la Route de la Soie
+const SILK_ROAD_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: {
+        name: 'Route de la Soie Septentrionale',
+        routeType: 'Voie caravanière continentale',
+        description: 'Axe reliant Chang’an au bassin du Tarim, à Samarcande, à la Perse et à Byzance.'
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [108.94, 34.26], [103.83, 36.06], [94.66, 40.14], [89.18, 42.95],
+          [75.99, 39.47], [71.67, 40.54], [66.97, 39.65], [64.42, 39.77],
+          [61.83, 37.60], [58.38, 37.95], [51.42, 35.69], [48.51, 34.80],
+          [44.36, 33.31], [40.74, 37.91], [37.16, 36.20], [35.91, 34.43], [28.97, 41.00]
+        ]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        name: 'Route de la Soie Méridionale (Tarim & Khotan)',
+        routeType: 'Voie caravanière du Sud',
+        description: 'Contournement sud du désert du Taklamakan par Niya et Khotan jusqu’au Pamir.'
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [94.66, 40.14], [88.16, 39.03], [82.75, 37.06], [79.92, 37.11],
+          [77.27, 38.41], [75.99, 39.47]
+        ]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        name: 'Branche vers le sous-continent indien',
+        routeType: 'Voie marchande et bouddhique',
+        description: 'Passage par l’Hindou Kouch reliant l’Asie centrale à Taxila et la vallée du Gange.'
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [66.97, 39.65], [66.90, 36.75], [69.17, 34.53], [71.52, 34.01],
+          [72.82, 33.74], [77.67, 27.49]
+        ]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        name: 'Voie Royale et débouché méditerranéen',
+        routeType: 'Voie impériale et maritime',
+        description: 'Liaison entre la Mésopotamie, la côte syro-palestinienne, Alexandrie et Rome.'
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [44.36, 33.31], [40.41, 34.45], [38.28, 34.56], [36.29, 33.51],
+          [35.21, 31.76], [29.91, 31.20], [14.26, 40.85], [12.49, 41.90]
+        ]
+      }
+    }
+  ]
+};
+
+// 2. Référentiel natif : Cités antiques & Fortifications du Limes
+const ANCIENT_CITIES_LIMES_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    // Limes & Murs défensifs
+    {
+      type: 'Feature',
+      properties: {
+        name: "Mur d'Hadrien",
+        type: 'Fortification impériale / Limes',
+        wiki: "Mur d'Hadrien",
+        description: "Fortification romaine construite en Bretagne insulaire pour protéger l'Empire des tribus calédoniennes."
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [-3.05, 54.90], [-2.70, 54.98], [-2.35, 55.01], [-1.95, 55.01], [-1.45, 54.99]
+        ]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        name: 'Limes de Germanie & du Danube',
+        type: 'Fortification frontière impériale',
+        wiki: 'Limes de Germanie',
+        description: 'Ligne défensive fortifiée protégeant les provinces romaines des incursions germaniques.'
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [6.08, 50.77], [7.58, 50.36], [8.65, 50.25], [9.35, 49.20],
+          [11.95, 48.90], [14.40, 48.30], [16.40, 48.15], [19.05, 47.50]
+        ]
+      }
+    },
+    // Métropoles & Cités phares de l'Antiquité
+    {
+      type: 'Feature',
+      properties: { name: 'Rome', type: 'Capitale impériale', wiki: 'Rome antique', description: 'Capitale de la République puis de l’Empire romain.' },
+      geometry: { type: 'Point', coordinates: [12.496, 41.902] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Athènes', type: 'Cité-État grecque', wiki: 'Athènes antique', description: 'Berceau de la démocratie et foyer culturel de la Grèce classique.' },
+      geometry: { type: 'Point', coordinates: [23.727, 37.983] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Alexandrie', type: 'Métropole hellénistique', wiki: 'Alexandrie', description: 'Fondée par Alexandre le Grand, foyer de la grande bibliothèque et du phare.' },
+      geometry: { type: 'Point', coordinates: [29.918, 31.200] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Carthage', type: 'Métropole punique', wiki: 'Civilisation carthaginoise', description: 'Grande puissance maritime et commerciale de la Méditerranée occidentale.' },
+      geometry: { type: 'Point', coordinates: [10.324, 36.853] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Constantinople', type: 'Capitale impériale', wiki: 'Constantinople', description: 'Ancienne Byzance, devenue la nouvelle Rome et capitale de l’Empire romain d’Orient.' },
+      geometry: { type: 'Point', coordinates: [28.978, 41.008] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Antioche', type: 'Métropole antique', wiki: 'Antioche', description: 'Capitale de l’Empire séleucide et troisième métropole de l’Empire romain.' },
+      geometry: { type: 'Point', coordinates: [36.160, 36.202] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Babylone', type: 'Métropole mésopotamienne', wiki: 'Babylone', description: 'Cité légendaire de Mésopotamie célèbre pour ses jardins suspendus et la porte d’Ishtar.' },
+      geometry: { type: 'Point', coordinates: [44.420, 32.540] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Persépolis', type: 'Capitale cérémonielle perse', wiki: 'Persépolis', description: 'Capitale cérémonielle de l’Empire perse achéménide édifiée par Darius le Grand.' },
+      geometry: { type: 'Point', coordinates: [52.891, 29.935] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Chang’an', type: 'Capitale impériale chinoise', wiki: "Chang'an", description: 'Point de départ oriental de la Route de la Soie et métropole des dynasties Han et Tang.' },
+      geometry: { type: 'Point', coordinates: [108.940, 34.265] }
+    },
+    {
+      type: 'Feature',
+      properties: { name: 'Lugdunum (Lyon)', type: 'Capitale des Gaules', wiki: 'Lugdunum', description: 'Fondée en 43 av. J.-C., capitale administrative des trois provinces gauloises.' },
+      geometry: { type: 'Point', coordinates: [4.835, 45.764] }
+    }
+  ]
+};
+
+// Icône dédiée aux cités antiques (pastille violette / indigo impérial)
+const ancientCityIcon = L.divIcon({
+  className: 'ancient-city-marker',
+  html: `<div style="
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background-color: #4f46e5;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 5px rgba(79, 70, 229, 0.8);
+  "></div>`,
+  iconSize: [11, 11],
+  iconAnchor: [5.5, 5.5],
+  popupAnchor: [0, -8]
+});
+
+// Icônes Leaflet personnalisées standards
 const defaultIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -64,7 +255,61 @@ function getEntityColor(name = '') {
   return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
-// Contrôleur de caméra
+function extractFeatureName(props) {
+  if (!props) return '';
+  return props.name || props.NAME || props.SUBJECT || props.PARTOF || props.LABEL || props.label || props.Name || props.Route || props.empire || props.province || '';
+}
+
+// Table de correspondance vers Wikipédia en français
+const HISTORICAL_WIKI_MAP = {
+  'route de la soie': 'Route de la soie',
+  'mur d’hadrien': "Mur d'Hadrien",
+  "mur d'hadrien": "Mur d'Hadrien",
+  'limes de germanie': 'Limes de Germanie',
+  'rome': 'Rome antique',
+  'athènes': 'Athènes antique',
+  'alexandrie': 'Alexandrie',
+  'carthage': 'Civilisation carthaginoise',
+  'constantinople': 'Constantinople',
+  'antioche': 'Antioche',
+  'babylone': 'Babylone',
+  'persépolis': 'Persépolis',
+  "chang'an": "Chang'an",
+  'lugdunum (lyon)': 'Lugdunum',
+  'celts': 'Celtes',
+  'suebi': 'Suèves',
+  'kingdom of gala': 'Gaïa (roi)',
+  'kingdom of syphax': 'Syphax',
+  'tarraconensis': 'Tarraconaise',
+  'lusitania': 'Lusitanie'
+};
+
+function getWikiUrl(rawName) {
+  if (!rawName || rawName.trim().length === 0) {
+    return 'https://fr.wikipedia.org/wiki/Histoire_du_monde';
+  }
+
+  const clean = rawName.trim().toLowerCase();
+  if (HISTORICAL_WIKI_MAP[clean]) {
+    return `https://fr.wikipedia.org/wiki/${encodeURIComponent(HISTORICAL_WIKI_MAP[clean])}`;
+  }
+
+  const stripped = clean
+    .replace(/^kingdom of\s+/i, '')
+    .replace(/^empire of\s+/i, '')
+    .replace(/^dynasty\s+/i, '')
+    .replace(/\s+empire$/i, '')
+    .replace(/\s+kingdom$/i, '')
+    .trim();
+
+  if (HISTORICAL_WIKI_MAP[stripped]) {
+    return `https://fr.wikipedia.org/wiki/${encodeURIComponent(HISTORICAL_WIKI_MAP[stripped])}`;
+  }
+
+  return `https://fr.wikipedia.org/w/index.php?search=${encodeURIComponent(stripped.length > 2 ? stripped : rawName)}&title=Sp%C3%A9cial%3ARecherche&go=Go`;
+}
+
+// Contrôleur de caméra Leaflet
 function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
   const map = useMap();
   const lastCenterKeyRef = useRef('');
@@ -118,8 +363,9 @@ export default function HistoricalAtlas({
   selectedEvent, 
   onOpenDrawer, 
   onMapYearChange,
-  mapLayers = { worldEmpires: true, subDivisions: true, markers: true }
+  mapLayers = { worldEmpires: true, subDivisions: true, tradeRoutes: true, ancientCities: false, markers: true }
 }) {
+  const [baseMapKey, setBaseMapKey] = useState('neutre');
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [worldGeoJson, setWorldGeoJson] = useState(null);
   const [subDivisionsGeoJson, setSubDivisionsGeoJson] = useState(null);
@@ -128,7 +374,7 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  // 1. Année centrale affichée par la frise
+  // 1. Année centrale de la frise
   const currentCenterYear = useMemo(() => {
     if (!viewRange) return 200;
     return Math.round((viewRange.min + viewRange.max) / 2);
@@ -181,7 +427,7 @@ export default function HistoricalAtlas({
       });
   }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange]);
 
-  // 3. Flux B : DARE Provinces régionales (URL Klokantech vérifiée)
+  // 3. Flux B : DARE Provinces régionales
   useEffect(() => {
     if (!mapLayers.subDivisions) return;
 
@@ -287,6 +533,8 @@ export default function HistoricalAtlas({
     }
   };
 
+  const currentBaseMap = BASE_MAPS[baseMapKey] || BASE_MAPS.neutre;
+
   return (
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
@@ -301,7 +549,7 @@ export default function HistoricalAtlas({
         }
       }}
     >
-      {/* Badge d'état */}
+      {/* Badge d'état & Sélecteur Relief / Neutre */}
       <div
         id="atlas-status-badge"
         style={{
@@ -322,8 +570,45 @@ export default function HistoricalAtlas({
           fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
         }}
       >
-        <span style={{ color: '#1c1917', fontWeight: 700 }}>
-          🏛️ Carte mondiale : {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
+        <div style={{ display: 'flex', backgroundColor: '#f3ece0', padding: 2, borderRadius: 6, gap: 2 }}>
+          <button
+            type="button"
+            onClick={() => setBaseMapKey('topo')}
+            style={{
+              border: 'none',
+              padding: '2px 7px',
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: 'pointer',
+              backgroundColor: baseMapKey === 'topo' ? '#ffffff' : 'transparent',
+              color: baseMapKey === 'topo' ? '#b45309' : '#78716c',
+              boxShadow: baseMapKey === 'topo' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+            }}
+          >
+            ⛰️ Relief
+          </button>
+          <button
+            type="button"
+            onClick={() => setBaseMapKey('neutre')}
+            style={{
+              border: 'none',
+              padding: '2px 7px',
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: 'pointer',
+              backgroundColor: baseMapKey === 'neutre' ? '#ffffff' : 'transparent',
+              color: baseMapKey === 'neutre' ? '#b45309' : '#78716c',
+              boxShadow: baseMapKey === 'neutre' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+            }}
+          >
+            🗺️ Neutre
+          </button>
+        </div>
+
+        <span style={{ color: '#1c1917', fontWeight: 700, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
+          🏛️ Carte : {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
         </span>
 
         {isLoadingBorders && (
@@ -362,8 +647,8 @@ export default function HistoricalAtlas({
 
       <MapContainer
         ref={mapRef}
-        center={[46.5, 2.5]}
-        zoom={5}
+        center={[36.0, 40.0]}
+        zoom={4}
         style={{ width: '100%', height: '100%' }}
       >
         <DynamicMapBridge
@@ -372,18 +657,19 @@ export default function HistoricalAtlas({
         />
 
         <TileLayer
-          attribution='Tiles &copy; Esri &mdash; National Geographic'
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={12}
+          key={baseMapKey}
+          attribution={currentBaseMap.attribution}
+          url={currentBaseMap.url}
+          maxZoom={currentBaseMap.maxZoom}
         />
 
-        {/* 1. COUCHE DES EMPIRES MONDIAUX (Fond de couleur des grands empires) */}
+        {/* 1. COUCHE DES EMPIRES MONDIAUX */}
         {mapLayers.worldEmpires && worldGeoJson && (
           <GeoJSON
             key={`world-layer-${activeMapSlice}`}
             data={worldGeoJson}
             style={(feature) => {
-              const name = feature?.properties?.NAME || feature?.properties?.name || '';
+              const name = extractFeatureName(feature?.properties);
               const color = getEntityColor(name);
               return {
                 color: color,
@@ -394,21 +680,45 @@ export default function HistoricalAtlas({
               };
             }}
             onEachFeature={(feature, layer) => {
-              const name = feature?.properties?.NAME || feature?.properties?.name || 'Empire / Royaume';
-              layer.bindTooltip(`<strong>${name}</strong> (${formatYear(activeMapSlice)})`, {
+              const detectedName = extractFeatureName(feature?.properties);
+              const displayName = detectedName || 'Territoire / Empire non documenté';
+              const cleanLower = detectedName.trim().toLowerCase();
+              const frName = HISTORICAL_WIKI_MAP[cleanLower];
+              const titleForPopup = frName ? `${detectedName} (${frName})` : displayName;
+
+              layer.bindTooltip(`<strong>${displayName}</strong> (${formatYear(activeMapSlice)})`, {
                 sticky: true
               });
+
+              layer.bindPopup(`
+                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:180px;">
+                  <div style="font-size:10px; font-weight:700; color:#b45309; text-transform:uppercase; margin-bottom:2px;">
+                    Empire / Royaume (${formatYear(activeMapSlice)})
+                  </div>
+                  <div style="font-size:14px; font-weight:700; color:#1c1917; margin-bottom:8px;">
+                    ${titleForPopup}
+                  </div>
+                  <a 
+                    href="${getWikiUrl(detectedName)}" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
+                  >
+                    🌐 Consulter sur Wikipédia
+                  </a>
+                </div>
+              `, { autoPan: true });
             }}
           />
         )}
 
-        {/* 2. COUCHE DES PROVINCES RÉGIONALES (DARE / Klokantech) */}
+        {/* 2. COUCHE DES PROVINCES RÉGIONALES */}
         {mapLayers.subDivisions && subDivisionsGeoJson && (
           <GeoJSON
             key={`subdivisions-layer-${currentCenterYear}`}
             data={subDivisionsGeoJson}
             style={(feature) => {
-              const name = feature?.properties?.name || feature?.properties?.NAME || feature?.properties?.province || '';
+              const name = extractFeatureName(feature?.properties);
               const color = getEntityColor(name);
               return {
                 color: '#ffffff',
@@ -420,15 +730,130 @@ export default function HistoricalAtlas({
               };
             }}
             onEachFeature={(feature, layer) => {
-              const name = feature?.properties?.name || feature?.properties?.NAME || feature?.properties?.province || 'Province';
-              layer.bindTooltip(`<strong>${name}</strong><br/><span style="font-size:10px; color:#57534e;">Province romaine</span>`, {
+              const rawName = extractFeatureName(feature?.properties) || 'Province';
+              const cleanLower = rawName.trim().toLowerCase();
+              const displayName = HISTORICAL_WIKI_MAP[cleanLower] ? `${rawName} (${HISTORICAL_WIKI_MAP[cleanLower]})` : rawName;
+
+              layer.bindTooltip(`<strong>${displayName}</strong><br/><span style="font-size:10px; color:#57534e;">Province romaine</span>`, {
                 sticky: true
               });
+
+              layer.bindPopup(`
+                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:180px;">
+                  <div style="font-size:10px; font-weight:700; color:#0284c7; text-transform:uppercase; margin-bottom:2px;">
+                    Province romaine
+                  </div>
+                  <div style="font-size:14px; font-weight:700; color:#1c1917; margin-bottom:8px;">
+                    ${displayName}
+                  </div>
+                  <a 
+                    href="${getWikiUrl(rawName)}" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
+                  >
+                    🌐 Consulter sur Wikipédia
+                  </a>
+                </div>
+              `, { autoPan: true });
             }}
           />
         )}
 
-        {/* 3. COUCHE DES MARQUEURS PERSONNELS */}
+        {/* 3. COUCHE DES VOIES DE COMMUNICATION & ROUTES DE LA SOIE */}
+        {mapLayers.tradeRoutes && (
+          <GeoJSON
+            key="silk-road-layer"
+            data={SILK_ROAD_GEOJSON}
+            style={() => ({
+              color: '#c2410c',
+              weight: 3.2,
+              dashArray: '7, 7',
+              opacity: 0.95
+            })}
+            onEachFeature={(feature, layer) => {
+              const routeName = feature?.properties?.name || 'Route de la Soie';
+              const routeType = feature?.properties?.routeType || 'Voie de communication';
+              const desc = feature?.properties?.description || '';
+
+              layer.bindTooltip(`<strong>🐫 ${routeName}</strong>`, { sticky: true });
+
+              layer.bindPopup(`
+                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:210px;">
+                  <div style="font-size:10px; font-weight:700; color:#c2410c; text-transform:uppercase; margin-bottom:2px;">
+                    🐫 ${routeType}
+                  </div>
+                  <div style="font-size:13px; font-weight:700; color:#1c1917; margin-bottom:4px;">
+                    ${routeName}
+                  </div>
+                  ${desc ? `<div style="font-size:11px; color:#57534e; margin-bottom:8px; line-height:1.4;">${desc}</div>` : ''}
+                  <a 
+                    href="${getWikiUrl(routeName)}" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
+                  >
+                    🌐 Article Wikipédia
+                  </a>
+                </div>
+              `, { autoPan: true });
+            }}
+          />
+        )}
+
+        {/* 4. COUCHE DES CITÉS ANTIQUES & LIMES */}
+        {mapLayers.ancientCities && (
+          <GeoJSON
+            key="ancient-cities-limes-layer"
+            data={ANCIENT_CITIES_LIMES_GEOJSON}
+            pointToLayer={(feature, latlng) => {
+              return L.marker(latlng, { icon: ancientCityIcon });
+            }}
+            style={(feature) => {
+              if (feature?.geometry?.type === 'LineString') {
+                return {
+                  color: '#4f46e5',
+                  weight: 3.5,
+                  opacity: 0.95,
+                  dashArray: '3, 4'
+                };
+              }
+              return {};
+            }}
+            onEachFeature={(feature, layer) => {
+              const name = feature?.properties?.name || 'Cité antique';
+              const type = feature?.properties?.type || 'Site historique';
+              const desc = feature?.properties?.description || '';
+              const wiki = feature?.properties?.wiki || name;
+
+              layer.bindTooltip(`<strong>🏛️ ${name}</strong><br/><span style="font-size:10px; color:#6366f1;">${type}</span>`, {
+                sticky: true
+              });
+
+              layer.bindPopup(`
+                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:210px;">
+                  <div style="font-size:10px; font-weight:700; color:#4f46e5; text-transform:uppercase; margin-bottom:2px;">
+                    🏛️ ${type}
+                  </div>
+                  <div style="font-size:13px; font-weight:700; color:#1c1917; margin-bottom:4px;">
+                    ${name}
+                  </div>
+                  ${desc ? `<div style="font-size:11px; color:#57534e; margin-bottom:8px; line-height:1.4;">${desc}</div>` : ''}
+                  <a 
+                    href="${getWikiUrl(wiki)}" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
+                  >
+                    🌐 Article Wikipédia
+                  </a>
+                </div>
+              `, { autoPan: true });
+            }}
+          />
+        )}
+
+        {/* 5. COUCHE DES MARQUEURS PERSONNELS */}
         {mapLayers.markers && activePoints.map(pt => {
           const isSelected = selectedEvent && selectedEvent.id === pt.eventId;
 
@@ -449,23 +874,46 @@ export default function HistoricalAtlas({
                   <div style={{ fontSize: 11, color: '#57534e', marginTop: 2, marginBottom: 8 }}>
                     {pt.event.titre} ({formatYear(pt.event.date_debut)})
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onOpenDrawer(pt.event)}
-                    style={{
-                      width: '100%',
-                      padding: '5px 10px',
-                      borderRadius: 6,
-                      border: 'none',
-                      backgroundColor: '#b45309',
-                      color: '#ffffff',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔍 Approfondir
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenDrawer(pt.event)}
+                      style={{
+                        width: '100%',
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: 'none',
+                        backgroundColor: '#b45309',
+                        color: '#ffffff',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🔍 Approfondir
+                    </button>
+                    <a
+                      href={getWikiUrl(pt.nom || pt.event.titre)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        padding: '4px 10px',
+                        borderRadius: 6,
+                        backgroundColor: '#f3ece0',
+                        color: '#1c1917',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      🌐 Wikipédia
+                    </a>
+                  </div>
                 </div>
               </Popup>
             </Marker>

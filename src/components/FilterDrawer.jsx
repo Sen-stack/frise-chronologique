@@ -24,10 +24,11 @@ export default function FilterDrawer({
   searchQuery = '',
   setSearchQuery,
   currentTheme = 'light',
-  // Nouvelles props de contrôle des calques
   mapLayers = {
     worldEmpires: true,
     subDivisions: true,
+    tradeRoutes: false,
+    ancientCities: false,
     markers: true
   },
   onToggleMapLayer
@@ -165,7 +166,7 @@ export default function FilterDrawer({
               >
                 <input
                   type="checkbox"
-                  checked={mapLayers.worldEmpires}
+                  checked={!!mapLayers.worldEmpires}
                   onChange={() => onToggleMapLayer && onToggleMapLayer('worldEmpires')}
                   style={{ accentColor: '#b45309', cursor: 'pointer' }}
                 />
@@ -190,7 +191,7 @@ export default function FilterDrawer({
               >
                 <input
                   type="checkbox"
-                  checked={mapLayers.subDivisions}
+                  checked={!!mapLayers.subDivisions}
                   onChange={() => onToggleMapLayer && onToggleMapLayer('subDivisions')}
                   style={{ accentColor: '#0284c7', cursor: 'pointer' }}
                 />
@@ -199,7 +200,57 @@ export default function FilterDrawer({
                 </span>
               </label>
 
-              {/* Option 3 : Marqueurs */}
+              {/* Option 3 : Voies de communication & Routes de la Soie */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  backgroundColor: mapLayers.tradeRoutes ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
+                  border: `1px solid ${mapLayers.tradeRoutes ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
+                  fontSize: 11
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!mapLayers.tradeRoutes}
+                  onChange={() => onToggleMapLayer && onToggleMapLayer('tradeRoutes')}
+                  style={{ accentColor: '#c2410c', cursor: 'pointer' }}
+                />
+                <span style={{ flex: 1, fontWeight: mapLayers.tradeRoutes ? 600 : 400 }}>
+                  🐪 Voies & Routes de la Soie
+                </span>
+              </label>
+
+              {/* Option 4 : Cités antiques & Limes */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  backgroundColor: mapLayers.ancientCities ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
+                  border: `1px solid ${mapLayers.ancientCities ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
+                  fontSize: 11
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!mapLayers.ancientCities}
+                  onChange={() => onToggleMapLayer && onToggleMapLayer('ancientCities')}
+                  style={{ accentColor: '#4f46e5', cursor: 'pointer' }}
+                />
+                <span style={{ flex: 1, fontWeight: mapLayers.ancientCities ? 600 : 400 }}>
+                  🏛️ Cités antiques & Limes
+                </span>
+              </label>
+
+              {/* Option 5 : Marqueurs d'événements */}
               <label
                 style={{
                   display: 'flex',
@@ -215,7 +266,7 @@ export default function FilterDrawer({
               >
                 <input
                   type="checkbox"
-                  checked={mapLayers.markers}
+                  checked={!!mapLayers.markers}
                   onChange={() => onToggleMapLayer && onToggleMapLayer('markers')}
                   style={{ accentColor: '#15803d', cursor: 'pointer' }}
                 />
@@ -227,7 +278,7 @@ export default function FilterDrawer({
           )}
         </div>
 
-        {/* SECTION 2 : REPLIABLE : FILTRES */}
+        {/* SECTION 2 : FILTRES */}
         <div
           style={{
             borderRadius: 10,
@@ -257,7 +308,6 @@ export default function FilterDrawer({
 
           {isFilterSectionOpen && (
             <div style={{ padding: '12px 10px 14px 10px' }}>
-              
               {/* Onglets sélecteurs */}
               <div
                 style={{
@@ -320,7 +370,7 @@ export default function FilterDrawer({
                 </button>
               </div>
 
-              {/* 1. TAGS */}
+              {/* TAGS */}
               {filterMode === 'tags' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -404,7 +454,7 @@ export default function FilterDrawer({
                 </div>
               )}
 
-              {/* 2. THÉMATIQUES */}
+              {/* THÉMATIQUES */}
               {filterMode === 'groups' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -492,7 +542,7 @@ export default function FilterDrawer({
                 </div>
               )}
 
-              {/* 3. UNITAIRES */}
+              {/* UNITAIRES */}
               {filterMode === 'custom' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <input
