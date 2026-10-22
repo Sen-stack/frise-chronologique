@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { formatYear, getItemStyle } from '../utils/timelineMath.js';
+import { formatYear } from '../utils/timelineMath.js';
 
+// Icônes personnalisées
 const defaultIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -23,20 +24,47 @@ const selectedIcon = L.icon({
   shadowSize: [42, 42]
 });
 
-// Coordonnées de secours historiques par défaut si l'événement n'a pas encore été géolocalisé
-function getHistoricalFallbackCoords(titre = '') {
-  const t = titre.toLowerCase();
-  if (t.includes('rome') || t.includes('romain')) return { lat: 41.9028, lng: 12.4964 };
-  if (t.includes('qin') || t.includes('shang') || t.includes('zhou') || t.includes('ming') || t.includes('confucius') || t.includes('taoï')) return { lat: 34.3416, lng: 108.9398 };
-  if (t.includes('gaugam') || t.includes('perse') || t.includes('babylone')) return { lat: 36.36, lng: 43.15 };
-  if (t.includes('hastings') || t.includes('angleterre')) return { lat: 50.91, lng: 0.48 };
-  if (t.includes('constantinople')) return { lat: 41.0082, lng: 28.9784 };
-  if (t.includes('amérique')) return { lat: 24.0, lng: -74.5 };
-  if (t.includes('napoléon') || t.includes('révolution')) return { lat: 48.8566, lng: 2.3522 };
-  return null;
+// Époques mondiales pour le calque de niveau 0 (Empires)
+const HISTORICAL_YEAR_SLICES = [
+  -3000, -2000, -1000, -500, -323, -200, -1, 100, 200, 300, 400, 500, 
+  600, 700, 800, 900, 1000, 1100, 1200, 1279, 1300, 1400, 1492, 1500, 
+  1600, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914, 1920, 1938, 1945, 1994
+];
+
+function getClosestHistoricalFile(year) {
+  let closest = HISTORICAL_YEAR_SLICES[0];
+  let minDiff = Math.abs(year - closest);
+
+  for (const slice of HISTORICAL_YEAR_SLICES) {
+    const diff = Math.abs(year - slice);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = slice;
+    }
+  }
+
+  const filename = closest < 0 
+    ? `world_bc${Math.abs(closest)}.geojson`
+    : `world_${closest}.geojson`;
+
+  return { year: closest, filename };
 }
 
-// Contrôleur de caméra ultra-fluide synchronisé avec la frise
+// Nuancier équilibré
+const PALETTE = [
+  '#b45309', '#0284c7', '#15803d', '#9333ea', '#c2410c', 
+  '#475569', '#0f766e', '#854d0e', '#be123c', '#4338ca'
+];
+
+function getEntityColor(name = '') {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return PALETTE[Math.abs(hash) % PALETTE.length];
+}
+
+// Contrôleur de caméra
 function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
   const map = useMap();
   const lastCenterKeyRef = useRef('');
@@ -52,11 +80,9 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
   useEffect(() => {
     if (isManualOverride || boundingBoxCoords.length === 0) return;
 
-    // Calcul de l'enveloppe
     const bounds = L.latLngBounds(boundingBoxCoords);
     if (!bounds.isValid()) return;
 
-    // Empreinte arrondie pour éviter le micro-tremblement
     const center = bounds.getCenter();
     const centerKey = `${center.lat.toFixed(1)},${center.lng.toFixed(1)},${map.getZoom()}`;
     if (centerKey === lastCenterKeyRef.current) return;
@@ -67,13 +93,13 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
       lastCenterKeyRef.current = centerKey;
 
       if (boundingBoxCoords.length === 1) {
-        map.flyTo(boundingBoxCoords[0], 6, { animate: true, duration: 1.2 });
+        map.flyTo(boundingBoxCoords[0], 6, { animate: true, duration: 1.0 });
       } else {
         map.flyToBounds(bounds, {
           padding: [50, 50],
           maxZoom: 7,
           animate: true,
-          duration: 1.2
+          duration: 1.0
         });
       }
     }, 120);
@@ -86,24 +112,126 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
   return null;
 }
 
-export default function HistoricalAtlas({ viewRange, events = [], selectedEvent, onOpenDrawer }) {
+export default function HistoricalAtlas({ 
+  viewRange, 
+  events = [], 
+  selectedEvent, 
+  onOpenDrawer, 
+  onMapYearChange,
+  mapLayers = { worldEmpires: true, subDivisions: true, markers: true }
+}) {
   const [isManualOverride, setIsManualOverride] = useState(false);
+  const [worldGeoJson, setWorldGeoJson] = useState(null);
+  const [subDivisionsGeoJson, setSubDivisionsGeoJson] = useState(null);
+  const [activeMapSlice, setActiveMapSlice] = useState(null);
+  const [isLoadingBorders, setIsLoadingBorders] = useState(false);
   const mapRef = useRef(null);
+  const cacheRef = useRef({});
 
-  // 1. Filtrage temporel strict
+  // 1. Année centrale affichée par la frise
+  const currentCenterYear = useMemo(() => {
+    if (!viewRange) return 200;
+    return Math.round((viewRange.min + viewRange.max) / 2);
+  }, [viewRange]);
+
+  // 2. Flux A : Empires mondiaux
+  useEffect(() => {
+    const { year: targetYear, filename } = getClosestHistoricalFile(currentCenterYear);
+
+    if (activeMapSlice === targetYear && worldGeoJson) {
+      if (onMapYearChange) onMapYearChange(targetYear);
+      return;
+    }
+
+    if (cacheRef.current[filename]) {
+      setWorldGeoJson(cacheRef.current[filename]);
+      setActiveMapSlice(targetYear);
+      if (onMapYearChange) onMapYearChange(targetYear);
+      return;
+    }
+
+    setIsLoadingBorders(true);
+    const cdnUrl = `https://cdn.jsdelivr.net/gh/aourednik/historical-basemaps@master/geojson/${filename}`;
+
+    fetch(cdnUrl)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        cacheRef.current[filename] = data;
+        setWorldGeoJson(data);
+        setActiveMapSlice(targetYear);
+        if (onMapYearChange) onMapYearChange(targetYear);
+        setIsLoadingBorders(false);
+      })
+      .catch(() => {
+        fetch(`https://raw.githubusercontent.com/aourednik/historical-basemaps/master/geojson/${filename}`)
+          .then(res => res.json())
+          .then(data => {
+            cacheRef.current[filename] = data;
+            setWorldGeoJson(data);
+            setActiveMapSlice(targetYear);
+            if (onMapYearChange) onMapYearChange(targetYear);
+            setIsLoadingBorders(false);
+          })
+          .catch(() => {
+            setIsLoadingBorders(false);
+          });
+      });
+  }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange]);
+
+  // 3. Flux B : DARE Provinces régionales (URL Klokantech vérifiée)
+  useEffect(() => {
+    if (!mapLayers.subDivisions) return;
+
+    const isClassicalEra = currentCenterYear >= -500 && currentCenterYear <= 500;
+    const subDivKey = isClassicalEra ? 'dare_provinces' : 'none';
+
+    if (cacheRef.current[subDivKey]) {
+      setSubDivisionsGeoJson(cacheRef.current[subDivKey]);
+      return;
+    }
+
+    if (isClassicalEra) {
+      const cdnUrl = 'https://cdn.jsdelivr.net/gh/klokantech/roman-empire@master/data/provinces.geojson';
+
+      fetch(cdnUrl)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          cacheRef.current[subDivKey] = data;
+          setSubDivisionsGeoJson(data);
+        })
+        .catch(() => {
+          fetch('https://raw.githubusercontent.com/klokantech/roman-empire/master/data/provinces.geojson')
+            .then(res => res.json())
+            .then(data => {
+              cacheRef.current[subDivKey] = data;
+              setSubDivisionsGeoJson(data);
+            })
+            .catch(err => {
+              console.error("Erreur chargement provinces DARE:", err);
+            });
+        });
+    } else {
+      setSubDivisionsGeoJson(null);
+    }
+  }, [currentCenterYear, mapLayers.subDivisions]);
+
+  // 4. Événements actifs
   const activeEvents = useMemo(() => {
     if (!viewRange) return [];
-    const vMin = viewRange.min;
-    const vMax = viewRange.max;
-
     return events.filter(evt => {
       const debut = evt.date_debut;
       const fin = evt.date_fin ?? evt.date_debut;
-      return debut <= vMax && fin >= vMin;
+      return debut <= viewRange.max && fin >= viewRange.min;
     });
   }, [events, viewRange]);
 
-  // 2. Extraction des points actifs avec rattrapage historique si vide
+  // 5. Points actifs
   const activePoints = useMemo(() => {
     const points = [];
 
@@ -135,84 +263,16 @@ export default function HistoricalAtlas({ viewRange, events = [], selectedEvent,
           latitude: Number(evt.latitude),
           longitude: Number(evt.longitude)
         });
-      } else {
-        // Coordonnées de secours déduites du titre de l'époque
-        const fallback = getHistoricalFallbackCoords(evt.titre);
-        if (fallback) {
-          points.push({
-            id: `${evt.id}-fallback`,
-            eventId: evt.id,
-            event: evt,
-            nom: evt.titre,
-            role: 'Zone historique',
-            latitude: fallback.lat,
-            longitude: fallback.lng
-          });
-        }
       }
     });
 
     return points;
   }, [activeEvents]);
 
-  // 3. Extraction des polygones GeoJSON actifs
-  const activePolygons = useMemo(() => {
-    const polygons = [];
-
-    activeEvents.forEach(evt => {
-      const rawGeo = evt.zone_geojson || evt.geojson || evt.polygone;
-      if (!rawGeo) return;
-
-      let parsedGeo = null;
-      if (typeof rawGeo === 'string') {
-        try {
-          parsedGeo = JSON.parse(rawGeo);
-        } catch {
-          parsedGeo = null;
-        }
-      } else if (typeof rawGeo === 'object') {
-        parsedGeo = rawGeo;
-      }
-
-      if (parsedGeo) {
-        const style = getItemStyle(evt);
-        polygons.push({
-          eventId: evt.id,
-          event: evt,
-          data: parsedGeo,
-          color: evt.couleur || style.stroke || '#b45309'
-        });
-      }
-    });
-
-    return polygons;
-  }, [activeEvents]);
-
-  // 4. Calcul de l'ensemble des coordonnées pour la Bounding Box
   const combinedBoundsCoords = useMemo(() => {
-    const coords = [];
+    return activePoints.map(p => [p.latitude, p.longitude]);
+  }, [activePoints]);
 
-    activePoints.forEach(p => {
-      coords.push([p.latitude, p.longitude]);
-    });
-
-    activePolygons.forEach(poly => {
-      try {
-        const layer = L.geoJSON(poly.data);
-        const bounds = layer.getBounds();
-        if (bounds.isValid()) {
-          coords.push([bounds.getNorth(), bounds.getEast()]);
-          coords.push([bounds.getSouth(), bounds.getWest()]);
-        }
-      } catch {
-        // Ignorer
-      }
-    });
-
-    return coords;
-  }, [activePoints, activePolygons]);
-
-  // Recalibrage forcé
   const handleRecalibrate = () => {
     setIsManualOverride(false);
     if (!mapRef.current || combinedBoundsCoords.length === 0) return;
@@ -241,7 +301,7 @@ export default function HistoricalAtlas({ viewRange, events = [], selectedEvent,
         }
       }}
     >
-      {/* Badge d'état & Bouton de recalibrage */}
+      {/* Badge d'état */}
       <div
         id="atlas-status-badge"
         style={{
@@ -262,9 +322,18 @@ export default function HistoricalAtlas({ viewRange, events = [], selectedEvent,
           fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
         }}
       >
-        <span style={{ color: '#78716c', fontWeight: 600 }}>
-          📍 {activePoints.length} point{activePoints.length > 1 ? 's' : ''}
-          {activePolygons.length > 0 && ` • 🗺️ ${activePolygons.length} zone${activePolygons.length > 1 ? 's' : ''}`}
+        <span style={{ color: '#1c1917', fontWeight: 700 }}>
+          🏛️ Carte mondiale : {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
+        </span>
+
+        {isLoadingBorders && (
+          <span style={{ fontSize: 10, color: '#b45309' }}>
+            chargement...
+          </span>
+        )}
+
+        <span style={{ color: '#78716c', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
+          📍 {activePoints.length} repère{activePoints.length > 1 ? 's' : ''}
         </span>
 
         {isManualOverride ? (
@@ -293,8 +362,8 @@ export default function HistoricalAtlas({ viewRange, events = [], selectedEvent,
 
       <MapContainer
         ref={mapRef}
-        center={[34, 108]}
-        zoom={4}
+        center={[46.5, 2.5]}
+        zoom={5}
         style={{ width: '100%', height: '100%' }}
       >
         <DynamicMapBridge
@@ -308,28 +377,59 @@ export default function HistoricalAtlas({ viewRange, events = [], selectedEvent,
           maxZoom={12}
         />
 
-        {activePolygons.map(poly => {
-          const isSelected = selectedEvent && selectedEvent.id === poly.eventId;
+        {/* 1. COUCHE DES EMPIRES MONDIAUX (Fond de couleur des grands empires) */}
+        {mapLayers.worldEmpires && worldGeoJson && (
+          <GeoJSON
+            key={`world-layer-${activeMapSlice}`}
+            data={worldGeoJson}
+            style={(feature) => {
+              const name = feature?.properties?.NAME || feature?.properties?.name || '';
+              const color = getEntityColor(name);
+              return {
+                color: color,
+                weight: 1.2,
+                opacity: 0.7,
+                fillColor: color,
+                fillOpacity: 0.18
+              };
+            }}
+            onEachFeature={(feature, layer) => {
+              const name = feature?.properties?.NAME || feature?.properties?.name || 'Empire / Royaume';
+              layer.bindTooltip(`<strong>${name}</strong> (${formatYear(activeMapSlice)})`, {
+                sticky: true
+              });
+            }}
+          />
+        )}
 
-          return (
-            <GeoJSON
-              key={`poly-${poly.eventId}`}
-              data={poly.data}
-              style={{
-                color: poly.color,
-                weight: isSelected ? 3 : 1.5,
-                opacity: isSelected ? 0.95 : 0.7,
-                fillColor: poly.color,
-                fillOpacity: isSelected ? 0.35 : 0.18
-              }}
-              eventHandlers={{
-                click: () => onOpenDrawer(poly.event)
-              }}
-            />
-          );
-        })}
+        {/* 2. COUCHE DES PROVINCES RÉGIONALES (DARE / Klokantech) */}
+        {mapLayers.subDivisions && subDivisionsGeoJson && (
+          <GeoJSON
+            key={`subdivisions-layer-${currentCenterYear}`}
+            data={subDivisionsGeoJson}
+            style={(feature) => {
+              const name = feature?.properties?.name || feature?.properties?.NAME || feature?.properties?.province || '';
+              const color = getEntityColor(name);
+              return {
+                color: '#ffffff',
+                weight: 1.5,
+                dashArray: '4, 4',
+                opacity: 0.95,
+                fillColor: color,
+                fillOpacity: 0.32
+              };
+            }}
+            onEachFeature={(feature, layer) => {
+              const name = feature?.properties?.name || feature?.properties?.NAME || feature?.properties?.province || 'Province';
+              layer.bindTooltip(`<strong>${name}</strong><br/><span style="font-size:10px; color:#57534e;">Province romaine</span>`, {
+                sticky: true
+              });
+            }}
+          />
+        )}
 
-        {activePoints.map(pt => {
+        {/* 3. COUCHE DES MARQUEURS PERSONNELS */}
+        {mapLayers.markers && activePoints.map(pt => {
           const isSelected = selectedEvent && selectedEvent.id === pt.eventId;
 
           return (

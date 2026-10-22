@@ -50,17 +50,29 @@ export default function TimelineCanvas() {
   const [availableGroups, setAvailableGroups] = useState([]);
   const [newGroupInput, setNewGroupInput] = useState('');
 
-  // Volet d'infos & filtres à gauche
-  const [isFilterOpen, setIsFilterOpen] = useState(true);
+  // 1. Volet d'infos & filtres à gauche FERMÉ PAR DÉFAUT
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [customSelectedIds, setCustomSelectedIds] = useState(new Set());
-  const [filterMode, setFilterMode] = useState('tags'); // 'tags' | 'groups' | 'custom'
+  const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Atlas Historique Mondial (Moitié haute 50% de l'écran, escamotable)
+  // Atlas Historique Mondial (Haut 50% escamotable)
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
+  const [mapLayers, setMapLayers] = useState({
+    worldEmpires: true,
+    subDivisions: true,
+    markers: true
+  });
+
+  const handleToggleMapLayer = (layerKey) => {
+    setMapLayers(prev => ({ ...prev, [layerKey]: !prev[layerKey] }));
+  };
   const [atlasFocusedEvent, setAtlasFocusedEvent] = useState(null);
+  
+  // 2. Année active des territoires affichés dans l'Atlas
+  const [atlasActiveYear, setAtlasActiveYear] = useState(200);
 
   // Volet latéral droit de savoir (Slide-over)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -641,6 +653,68 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
+    // 3. CURSEUR TEMPOREL ÉLÉGANT DE L'ATLAS (Traverse la frise)
+    if (isAtlasOpen && atlasActiveYear !== null) {
+      const atlasX = yearToX(atlasActiveYear);
+
+      if (atlasX >= -100 && atlasX <= w + 100) {
+        ctx.save();
+
+        // Halo lumineux doux
+        const gradient = ctx.createLinearGradient(atlasX - 18, 0, atlasX + 18, 0);
+        gradient.addColorStop(0, 'rgba(180, 83, 9, 0)');
+        gradient.addColorStop(0.5, 'rgba(180, 83, 9, 0.18)');
+        gradient.addColorStop(1, 'rgba(180, 83, 9, 0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(atlasX - 18, 0, 36, h);
+
+        // Ligne verticale néo-classique
+        ctx.strokeStyle = '#b45309';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(atlasX, 0);
+        ctx.lineTo(atlasX, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Balise supérieure flottante
+        const labelText = `🏛️ Carte : ${formatYear(atlasActiveYear)}`;
+        ctx.font = 'bold 10px system-ui, sans-serif';
+        const labelW = ctx.measureText(labelText).width + 16;
+        const badgeY = 14;
+
+        ctx.fillStyle = '#b45309';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetY = 2;
+
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(atlasX - labelW / 2, badgeY, labelW, 20, 10);
+        } else {
+          ctx.rect(atlasX - labelW / 2, badgeY, labelW, 20);
+        }
+        ctx.fill();
+
+        // Pointe vers le bas
+        ctx.beginPath();
+        ctx.moveTo(atlasX - 4, badgeY + 20);
+        ctx.lineTo(atlasX, badgeY + 24);
+        ctx.lineTo(atlasX + 4, badgeY + 20);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelText, atlasX, badgeY + 10);
+
+        ctx.restore();
+      }
+    }
+
     // Minimap
     mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
@@ -676,6 +750,13 @@ export default function TimelineCanvas() {
         mctx.fillRect(mx - 1, 36, 2, 6);
       }
     });
+
+    // Curseur sur la minimap
+    if (isAtlasOpen && atlasActiveYear !== null) {
+      const atlasMiniX = yearToMiniX(atlasActiveYear, mw);
+      mctx.fillStyle = '#b45309';
+      mctx.fillRect(atlasMiniX - 1, 4, 2, 42);
+    }
 
     const vx1 = yearToMiniX(vMin, mw);
     const vx2 = yearToMiniX(vMax, mw);
@@ -757,7 +838,7 @@ export default function TimelineCanvas() {
 
   useEffect(() => {
     drawScene();
-  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, currentTheme]);
+  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, atlasActiveYear, currentTheme]);
 
   // Écouteurs souris et tactile
   useEffect(() => {
@@ -1161,7 +1242,7 @@ export default function TimelineCanvas() {
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", touchAction: 'none' }}>
 
-      {/* 1. ATLAS HISTORIQUE MONDIAL (Haut 50% escamotable) */}
+      {/* 1. ATLAS HISTORIQUE MONDIAL */}
       {isAtlasOpen && (
         <div
           style={{
@@ -1181,6 +1262,8 @@ export default function TimelineCanvas() {
             events={events}
             selectedEvent={atlasFocusedEvent || drawerEvent || selectedEvent}
             onOpenDrawer={(evt) => handleOpenDrawer(evt)}
+            onMapYearChange={(yr) => setAtlasActiveYear(yr)}
+            mapLayers={mapLayers}
           />
         </div>
       )}
@@ -1375,6 +1458,8 @@ export default function TimelineCanvas() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentTheme={currentTheme}
+        mapLayers={mapLayers}
+        onToggleMapLayer={handleToggleMapLayer}
       />
 
       {/* Pop-up aperçu rapide ancrée au-dessus du repère sur la frise */}
