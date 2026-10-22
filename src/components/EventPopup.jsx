@@ -5,23 +5,25 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
   if (!event) return null;
 
   const style = getItemStyle(event);
+  const accentColor = event.couleur || style.stroke || '#b45309';
 
   return (
     <div
       style={{
         position: 'absolute',
         left: Math.max(190, Math.min(window.innerWidth - 190, position.x)),
-        top: Math.max(70, position.y - 12),
+        top: position.y - 14,
         transform: 'translate(-50%, -100%)',
-        zIndex: 20,
-        width: 360,
-        padding: '14px 16px',
-        backgroundColor: 'rgba(15, 23, 42, 0.96)',
-        backdropFilter: 'blur(16px)',
-        border: `1.5px solid ${style.stroke}`,
-        borderRadius: 14,
-        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.75), 0 0 20px rgba(0, 0, 0, 0.5)',
-        color: '#f8fafc',
+        zIndex: 25,
+        width: 320,
+        maxWidth: 'calc(100vw - 32px)',
+        padding: '12px 14px',
+        backgroundColor: '#faf7f2',
+        border: '1px solid #e7ded0',
+        borderRadius: 12,
+        boxShadow: '0 10px 25px rgba(44, 34, 22, 0.12), 0 2px 6px rgba(44, 34, 22, 0.06)',
+        color: '#1c1917',
+        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
         pointerEvents: 'auto'
       }}
     >
@@ -29,49 +31,50 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
       <div
         style={{
           position: 'absolute',
-          bottom: -7,
+          bottom: -6,
           left: '50%',
           transform: 'translateX(-50%) rotate(45deg)',
-          width: 12,
-          height: 12,
-          backgroundColor: 'rgba(15, 23, 42, 0.96)',
-          borderRight: `1.5px solid ${style.stroke}`,
-          borderBottom: `1.5px solid ${style.stroke}`
+          width: 10,
+          height: 10,
+          backgroundColor: '#faf7f2',
+          borderRight: '1px solid #e7ded0',
+          borderBottom: '1px solid #e7ded0'
         }}
       />
 
       {/* En-tête */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span
             style={{
               fontSize: 9,
               textTransform: 'uppercase',
-              letterSpacing: 1,
+              letterSpacing: 0.8,
               padding: '2px 6px',
               borderRadius: 4,
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
-              color: style.stroke,
-              fontWeight: 'bold'
+              backgroundColor: '#f3ece0',
+              color: accentColor,
+              fontWeight: 700
             }}
           >
             {event.date_fin ? '⏳ Période' : '📍 Événement'}
           </span>
-          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>
+          <span style={{ fontSize: 11, color: '#78716c', fontWeight: 600 }}>
             {formatYear(event.date_debut)}
             {event.date_fin ? ` ➔ ${formatYear(event.date_fin)}` : ''}
           </span>
         </div>
 
         <button
+          type="button"
           onClick={onClose}
           title="Fermer"
           style={{
             background: 'none',
             border: 'none',
-            color: '#94a3b8',
+            color: '#78716c',
             cursor: 'pointer',
-            fontSize: 14,
+            fontSize: 13,
             padding: 2,
             lineHeight: 1
           }}
@@ -81,7 +84,7 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
       </div>
 
       {/* Titre */}
-      <h3 style={{ margin: '0 0 6px 0', fontWeight: 'bold', color: '#ffffff', fontSize: 15, lineHeight: 1.3 }}>
+      <h3 style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#1c1917', fontSize: 14, lineHeight: 1.3 }}>
         {event.titre}
       </h3>
 
@@ -89,7 +92,7 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
       <p
         style={{
           fontSize: 11,
-          color: '#cbd5e1',
+          color: '#57534e',
           margin: '0 0 10px 0',
           lineHeight: 1.45,
           display: '-webkit-box',
@@ -102,17 +105,17 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
       </p>
 
       {/* Badges de tags */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
         {(event.tags || [event.categorie]).filter(Boolean).map(t => (
           <span
             key={t}
             style={{
               padding: '1px 6px',
-              borderRadius: 10,
+              borderRadius: 6,
               fontSize: 9,
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#94a3b8'
+              backgroundColor: '#f3ece0',
+              color: '#57534e',
+              fontWeight: 500
             }}
           >
             #{t}
@@ -123,32 +126,33 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
       {/* Pied : Bouton Approfondir */}
       <div
         style={{
-          borderTop: '1px solid rgba(51, 65, 85, 0.5)',
-          paddingTop: 10,
+          borderTop: '1px solid #e7ded0',
+          paddingTop: 8,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center'
         }}
       >
-        <span style={{ fontSize: 10, color: '#64748b' }}>
+        <span style={{ fontSize: 10, color: '#a8a29e', fontWeight: 600 }}>
           🏛️ {event.periode}
         </span>
 
         <button
+          type="button"
           onClick={() => onDeepDive(event)}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 5,
+            gap: 4,
             padding: '5px 12px',
-            backgroundColor: style.stroke,
-            color: '#020617',
+            backgroundColor: '#b45309',
+            color: '#ffffff',
             border: 'none',
             borderRadius: 6,
             fontSize: 11,
-            fontWeight: 'bold',
+            fontWeight: 700,
             cursor: 'pointer',
-            boxShadow: `0 2px 8px ${style.stroke}40`
+            boxShadow: '0 2px 6px rgba(180, 83, 9, 0.2)'
           }}
         >
           <span>🔍</span>

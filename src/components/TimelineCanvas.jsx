@@ -22,6 +22,7 @@ import FilterDrawer from './FilterDrawer.jsx';
 import EventModal from './EventModal.jsx';
 import KnowledgeSplitView from './KnowledgeSplitView.jsx';
 import EventEditDrawer from './EventEditDrawer.jsx';
+import HistoricalAtlas from './HistoricalAtlas.jsx';
 
 export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
@@ -57,9 +58,13 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags'); // 'tags' | 'groups' | 'custom'
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Split View haut
-  const [isSplitViewOpen, setIsSplitViewOpen] = useState(false);
-  const [splitEvent, setSplitEvent] = useState(null);
+  // Atlas Historique Mondial (Moitié haute 50% de l'écran, escamotable)
+  const [isAtlasOpen, setIsAtlasOpen] = useState(true);
+  const [atlasFocusedEvent, setAtlasFocusedEvent] = useState(null);
+
+  // Volet latéral droit de savoir (Slide-over)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerEvent, setDrawerEvent] = useState(null);
 
   // Volet latéral droit de modification
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
@@ -196,7 +201,6 @@ export default function TimelineCanvas() {
     return GLOBAL_MAX;
   };
 
-  // Algorithme d'empilement avec gravité stricte
   const computeGravityTracks = (periodesList) => {
     const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - a.date_fin));
     const occupiedTop = [];
@@ -367,11 +371,10 @@ export default function TimelineCanvas() {
       if (rX + rW < -100 || rX > w + 100) return;
 
       const style = getItemStyle(p);
-      const isSelected = (selectedEvent && selectedEvent.id === p.id) || (splitEvent && splitEvent.id === p.id);
+      const isSelected = (selectedEvent && selectedEvent.id === p.id) || (drawerEvent && drawerEvent.id === p.id);
       const isTop = p.side === 'top';
       const dir = isTop ? -1 : 1;
 
-      // Paramètres du virage : largeur basée sur la hauteur du bandeau pour une courbe naturelle
       const transitionW = Math.max(16, trackH * 1.1);
 
       ctx.save();
@@ -391,8 +394,6 @@ export default function TimelineCanvas() {
       const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
       rectTop = isTop ? yBase - trackH : yBase;
 
-      // Règle de matière suffisante :
-      // Vérifier si la distance restante après la fin de l'obstacle est suffisante (>= trackH)
       let canDrop = false;
       let xSplit = 0;
       let remainingWAfterDrop = 0;
@@ -400,13 +401,11 @@ export default function TimelineCanvas() {
       if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin && p.level > 0) {
         xSplit = yearToX(p.dropYear);
         remainingWAfterDrop = (rX + rW) - xSplit;
-        // Si largeur après obstacle >= trackH, on peut descendre
         if (remainingWAfterDrop >= trackH) {
           canDrop = true;
         }
       }
 
-      // 1. FORME LIGNE FINE
       if (p.forme === 'ligne') {
         const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
         const tickH = Math.max(6, trackH * 0.4);
@@ -421,11 +420,9 @@ export default function TimelineCanvas() {
         ctx.stroke();
 
         rectH = trackH;
-      }
-      // 2. FORME BANDEAU AVEC VIRAGE EN S (si matière suffisante)
-      else if (canDrop) {
+      } else if (canDrop) {
         const actualTransW = Math.min(transitionW, remainingWAfterDrop * 0.8);
-        const xTransStart = xSplit; // Démarre STRICTEMENT à la libération, pas avant
+        const xTransStart = xSplit;
         const xTransEnd = xSplit + actualTransW;
 
         const targetLvl = p.level - 1;
@@ -434,24 +431,19 @@ export default function TimelineCanvas() {
         const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
 
         ctx.beginPath();
-
-        // 1. Départ bord haut/extérieur
         ctx.moveTo(rX + radius, yStart + dir * trackH);
         ctx.lineTo(xTransStart, yStart + dir * trackH);
 
-        // 2. Courbe vers le bas
         ctx.bezierCurveTo(
           xTransStart + actualTransW * 0.5, yStart + dir * trackH,
           xTransStart + actualTransW * 0.5, yEnd + dir * trackH,
           xTransEnd, yEnd + dir * trackH
         );
 
-        // 3. Vers la fin droite
         ctx.lineTo(rX + rW - radius, yEnd + dir * trackH);
         ctx.arcTo(rX + rW, yEnd + dir * trackH, rX + rW, yEnd, radius);
         ctx.arcTo(rX + rW, yEnd, rX + rW - radius, yEnd, radius);
 
-        // 4. Retour bord intérieur vers la gauche
         ctx.lineTo(xTransEnd, yEnd);
         ctx.bezierCurveTo(
           xTransStart + actualTransW * 0.5, yEnd,
@@ -459,7 +451,6 @@ export default function TimelineCanvas() {
           xTransStart, yStart
         );
 
-        // 5. Vers le début gauche
         ctx.lineTo(rX + radius, yStart);
         ctx.arcTo(rX, yStart, rX, yStart + dir * trackH, radius);
         ctx.arcTo(rX, yStart + dir * trackH, rX + radius, yStart + dir * trackH, radius);
@@ -475,9 +466,7 @@ export default function TimelineCanvas() {
 
         rectTop = Math.min(yStart, yEnd, yStart + dir * trackH, yEnd + dir * trackH);
         rectH = Math.abs(yStart - yEnd) + trackH;
-      }
-      // 3. BANDEAU DROIT (pas de gravité, ou matière insuffisante pour descendre)
-      else {
+      } else {
         const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
 
         ctx.beginPath();
@@ -495,7 +484,6 @@ export default function TimelineCanvas() {
         ctx.stroke();
       }
 
-      // Hitbox
       hitboxesRef.current.push({
         type: 'rect',
         x: rX,
@@ -505,7 +493,6 @@ export default function TimelineCanvas() {
         evt: p
       });
 
-      // Libellé de la période : rogné strictement à l'intérieur
       if (rW > 30) {
         ctx.save();
         ctx.beginPath();
@@ -556,7 +543,7 @@ export default function TimelineCanvas() {
 
       const titreTexte = String(evt.titre || 'Sans titre');
       const style = getItemStyle(evt);
-      const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (splitEvent && splitEvent.id === evt.id);
+      const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (drawerEvent && drawerEvent.id === evt.id);
       const shouldShowLabel = (evt.importance || 3) >= minImportanceForText || isSelected;
 
       ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
@@ -719,10 +706,10 @@ export default function TimelineCanvas() {
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
 
-    const availableH = isSplitViewOpen ? totalH * 0.5 : totalH;
+    const timelineH = isAtlasOpen ? totalH * 0.5 : totalH;
 
     canvasMainRef.current.width = totalW;
-    canvasMainRef.current.height = Math.max(100, availableH - MINI_HEIGHT);
+    canvasMainRef.current.height = Math.max(100, timelineH - MINI_HEIGHT);
 
     canvasMiniRef.current.width = totalW;
     canvasMiniRef.current.height = MINI_HEIGHT;
@@ -766,11 +753,11 @@ export default function TimelineCanvas() {
     window.addEventListener('resize', updateSizesAndDraw);
     updateSizesAndDraw();
     return () => window.removeEventListener('resize', updateSizesAndDraw);
-  }, [isSplitViewOpen]);
+  }, [isAtlasOpen]);
 
   useEffect(() => {
     drawScene();
-  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, splitEvent, isSplitViewOpen, currentTheme]);
+  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, currentTheme]);
 
   // Écouteurs souris et tactile
   useEffect(() => {
@@ -895,11 +882,14 @@ export default function TimelineCanvas() {
 
       if (hit) {
         setSelectedEvent(hit.evt);
+        setAtlasFocusedEvent(hit.evt);
         const targetX = hit.type === 'rect' ? hit.x + hit.w / 2 : hit.x;
         const targetY = hit.y;
         setPopupPos({ x: targetX, y: targetY });
 
-        setSplitEvent(prev => (prev ? hit.evt : null));
+        if (isDrawerOpen) {
+          setDrawerEvent(hit.evt);
+        }
         if (isEditDrawerOpen) {
           setEditingTargetEvent(hit.evt);
         }
@@ -1032,17 +1022,18 @@ export default function TimelineCanvas() {
     setIsEditDrawerOpen(true);
   };
 
-  const handleOpenSplit = (evt) => {
+  const handleOpenDrawer = (evt) => {
     const target = evt || selectedEvent;
     if (!target) return;
-    setSplitEvent(target);
-    setIsSplitViewOpen(true);
+    setDrawerEvent(target);
+    setAtlasFocusedEvent(target);
+    setIsDrawerOpen(true);
     setSelectedEvent(null);
   };
 
-  const handleCloseSplit = () => {
-    setIsSplitViewOpen(false);
-    setSplitEvent(null);
+  const handleCloseDrawer = () => {
+    setIsDrawerOpen(false);
+    setDrawerEvent(null);
   };
 
   const handleDeleteEvent = async (evt) => {
@@ -1056,7 +1047,7 @@ export default function TimelineCanvas() {
     } else {
       setEvents(prev => prev.filter(e => e.id !== evt.id));
       setSelectedEvent(null);
-      if (splitEvent && splitEvent.id === evt.id) handleCloseSplit();
+      if (drawerEvent && drawerEvent.id === evt.id) handleCloseDrawer();
       if (editingTargetEvent && editingTargetEvent.id === evt.id) setIsEditDrawerOpen(false);
     }
   };
@@ -1074,7 +1065,7 @@ export default function TimelineCanvas() {
       const updated = data[0];
       setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
       setSelectedEvent(updated);
-      if (splitEvent && splitEvent.id === updated.id) setSplitEvent(updated);
+      if (drawerEvent && drawerEvent.id === updated.id) setDrawerEvent(updated);
       setIsEditDrawerOpen(false);
     }
   };
@@ -1165,23 +1156,47 @@ export default function TimelineCanvas() {
     }
   };
 
-  const activeHeaderEvent = splitEvent || selectedEvent;
+  const activeHeaderEvent = drawerEvent || selectedEvent;
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", touchAction: 'none' }}>
 
-      {/* 1. Knowledge Split View */}
+      {/* 1. ATLAS HISTORIQUE MONDIAL (Haut 50% escamotable) */}
+      {isAtlasOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '50vh',
+            borderBottom: '1px solid #e7ded0',
+            backgroundColor: '#0f172a',
+            zIndex: 10,
+            overflow: 'hidden'
+          }}
+        >
+          <HistoricalAtlas
+            viewRange={viewRange}
+            events={events}
+            selectedEvent={atlasFocusedEvent || drawerEvent || selectedEvent}
+            onOpenDrawer={(evt) => handleOpenDrawer(evt)}
+          />
+        </div>
+      )}
+
+      {/* 2. Slide-over lateral droit (Encyclopédie & savoir) */}
       <KnowledgeSplitView
-        isOpen={isSplitViewOpen}
-        onClose={handleCloseSplit}
-        event={splitEvent}
+        isOpen={isDrawerOpen}
+        onClose={handleCloseDrawer}
+        event={drawerEvent}
       />
 
-      {/* 2. Indicateur de date en haut à gauche */}
+      {/* 3. Indicateur de date en haut à gauche de la frise */}
       <div
         style={{
           position: 'absolute',
-          top: isSplitViewOpen ? 'calc(50vh + 14px)' : 16,
+          top: isAtlasOpen ? 'calc(50vh + 14px)' : 16,
           left: 48,
           zIndex: 20,
           pointerEvents: 'none',
@@ -1213,10 +1228,10 @@ export default function TimelineCanvas() {
         </div>
       </div>
 
-      {/* 3. Barre d'outils centrée */}
+      {/* 4. Barre d'outils centrée */}
       <div style={{
         position: 'absolute',
-        top: isSplitViewOpen ? 'calc(50% + 12px)' : 14,
+        top: isAtlasOpen ? 'calc(50% + 12px)' : 14,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 20,
@@ -1232,6 +1247,25 @@ export default function TimelineCanvas() {
         color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
         transition: 'top 0.25s ease'
       }}>
+        {/* Bascule escamotage Atlas */}
+        <button
+          type="button"
+          onClick={() => setIsAtlasOpen(prev => !prev)}
+          style={{
+            padding: '6px 10px',
+            backgroundColor: isAtlasOpen ? '#0284c7' : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
+            color: isAtlasOpen ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
+            border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
+            borderRadius: 8,
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          title={isAtlasOpen ? "Replier la carte" : "Déployer la carte"}
+        >
+          {isAtlasOpen ? '🗺️ Atlas (50%)' : '🗺️ Ouvrir Atlas'}
+        </button>
+
         <button
           type="button"
           onClick={() => setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
@@ -1275,13 +1309,13 @@ export default function TimelineCanvas() {
             <button
               type="button"
               onClick={() => {
-                if (isSplitViewOpen) handleCloseSplit();
-                else handleOpenSplit(selectedEvent);
+                if (isDrawerOpen) handleCloseDrawer();
+                else handleOpenDrawer(selectedEvent);
               }}
               style={{
                 padding: '6px 10px',
-                backgroundColor: isSplitViewOpen ? '#0284c7' : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
-                color: isSplitViewOpen ? '#ffffff' : '#0284c7',
+                backgroundColor: isDrawerOpen ? '#0284c7' : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
+                color: isDrawerOpen ? '#ffffff' : '#0284c7',
                 border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
                 borderRadius: 8,
                 fontSize: 11,
@@ -1289,7 +1323,7 @@ export default function TimelineCanvas() {
                 cursor: 'pointer'
               }}
             >
-              {isSplitViewOpen ? '✕' : 'Détails'}
+              {isDrawerOpen ? '✕ Volet' : 'Détails'}
             </button>
 
             <button
@@ -1312,7 +1346,7 @@ export default function TimelineCanvas() {
         )}
       </div>
 
-      {/* 4. Volet principal à gauche */}
+      {/* 5. Volet latéral gauche des filtres */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
@@ -1343,15 +1377,37 @@ export default function TimelineCanvas() {
         currentTheme={currentTheme}
       />
 
-      {/* Pop-up aperçu rapide */}
-      <EventPopup
-        event={selectedEvent}
-        position={popupPos}
-        onClose={() => setSelectedEvent(null)}
-        onEdit={handleOpenEditDrawer}
-        onDelete={handleDeleteEvent}
-        onDeepDive={() => handleOpenSplit(selectedEvent)}
-      />
+      {/* Pop-up aperçu rapide ancrée au-dessus du repère sur la frise */}
+      {selectedEvent && (() => {
+        const span = viewRange.max - viewRange.min;
+        if (span <= 0) return null;
+
+        const isPeriod = selectedEvent.date_fin !== null && selectedEvent.date_fin !== undefined;
+        const targetYear = isPeriod 
+          ? (Math.max(viewRange.min, selectedEvent.date_debut) + Math.min(viewRange.max, selectedEvent.date_fin)) / 2 
+          : selectedEvent.date_debut;
+
+        const dynamicX = ((targetYear - viewRange.min) / span) * window.innerWidth;
+        const atlasOffsetY = isAtlasOpen ? (window.innerHeight * 0.5) : 0;
+        const absoluteTargetY = atlasOffsetY + popupPos.y;
+
+        const debut = selectedEvent.date_debut;
+        const fin = selectedEvent.date_fin ?? debut;
+        if (fin < viewRange.min || debut > viewRange.max) {
+          return null;
+        }
+
+        return (
+          <EventPopup
+            event={selectedEvent}
+            position={{ x: dynamicX, y: absoluteTargetY }}
+            onClose={() => setSelectedEvent(null)}
+            onEdit={handleOpenEditDrawer}
+            onDelete={handleDeleteEvent}
+            onDeepDive={() => handleOpenDrawer(selectedEvent)}
+          />
+        );
+      })()}
 
       {/* Modale création */}
       <EventModal
@@ -1416,13 +1472,13 @@ export default function TimelineCanvas() {
         availableGroups={availableGroups}
       />
 
-      {/* Zone Canvas frise */}
+      {/* Zone Canvas frise (remplit le bas ou 100% si Atlas replié) */}
       <div style={{
         position: 'absolute',
         bottom: 70,
         left: 0,
         width: '100%',
-        height: isSplitViewOpen ? 'calc(50% - 70px)' : 'calc(100% - 70px)',
+        height: isAtlasOpen ? 'calc(50% - 70px)' : 'calc(100% - 70px)',
         cursor: 'grab',
         touchAction: 'none',
         transition: 'height 0.25s ease'
