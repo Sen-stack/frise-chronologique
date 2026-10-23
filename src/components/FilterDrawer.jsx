@@ -28,7 +28,6 @@ export default function FilterDrawer({
     worldEmpires: true,
     subDivisions: true,
     tradeRoutes: false,
-    ancientCities: false,
     markers: true
   },
   onToggleMapLayer
@@ -225,32 +224,7 @@ export default function FilterDrawer({
                 </span>
               </label>
 
-              {/* Option 4 : Cités antiques & Limes */}
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  backgroundColor: mapLayers.ancientCities ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                  border: `1px solid ${mapLayers.ancientCities ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
-                  fontSize: 11
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!mapLayers.ancientCities}
-                  onChange={() => onToggleMapLayer && onToggleMapLayer('ancientCities')}
-                  style={{ accentColor: '#4f46e5', cursor: 'pointer' }}
-                />
-                <span style={{ flex: 1, fontWeight: mapLayers.ancientCities ? 600 : 400 }}>
-                  🏛️ Cités antiques & Limes
-                </span>
-              </label>
-
-              {/* Option 5 : Marqueurs d'événements */}
+              {/* Option 4 : Marqueurs d'événements */}
               <label
                 style={{
                   display: 'flex',
@@ -308,7 +282,6 @@ export default function FilterDrawer({
 
           {isFilterSectionOpen && (
             <div style={{ padding: '12px 10px 14px 10px' }}>
-              {/* Onglets sélecteurs */}
               <div
                 style={{
                   display: 'grid',
@@ -370,7 +343,6 @@ export default function FilterDrawer({
                 </button>
               </div>
 
-              {/* TAGS */}
               {filterMode === 'tags' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -429,9 +401,7 @@ export default function FilterDrawer({
                             gap: 8,
                             padding: '6px 8px',
                             borderRadius: 6,
-                            backgroundColor: isChecked
-                              ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)')
-                              : 'transparent',
+                            backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
                             border: `1px solid ${isChecked ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
                             cursor: 'pointer',
                             fontSize: 11
@@ -454,7 +424,6 @@ export default function FilterDrawer({
                 </div>
               )}
 
-              {/* THÉMATIQUES */}
               {filterMode === 'groups' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -517,9 +486,7 @@ export default function FilterDrawer({
                               gap: 8,
                               padding: '6px 8px',
                               borderRadius: 6,
-                              backgroundColor: isChecked
-                                ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)')
-                                : 'transparent',
+                              backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
                               border: `1px solid ${isChecked ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
                               cursor: 'pointer',
                               fontSize: 11
@@ -542,7 +509,6 @@ export default function FilterDrawer({
                 </div>
               )}
 
-              {/* UNITAIRES */}
               {filterMode === 'custom' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <input
@@ -618,9 +584,7 @@ export default function FilterDrawer({
                             gap: 6,
                             padding: '5px 6px',
                             borderRadius: 6,
-                            backgroundColor: isChecked
-                              ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)')
-                              : 'transparent',
+                            backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
                             border: `1px solid ${isChecked ? (isLight ? 'rgba(180, 150, 120, 0.35)' : '#475569') : 'transparent'}`,
                             cursor: 'pointer',
                             fontSize: 10
@@ -644,11 +608,9 @@ export default function FilterDrawer({
                   </div>
                 </div>
               )}
-
             </div>
           )}
         </div>
-
       </div>
     </div>
   );

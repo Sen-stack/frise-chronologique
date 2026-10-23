@@ -42,15 +42,12 @@ export default function TimelineCanvas() {
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState([]);
 
-  // Répertoire des tags
   const [availableTags, setAvailableTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [newTagInput, setNewTagInput] = useState('');
 
-  // Répertoire des fils conducteurs / thématiques
   const [availableGroups, setAvailableGroups] = useState([]);
   const [newGroupInput, setNewGroupInput] = useState('');
 
-  // 1. Volet d'infos & filtres à gauche FERMÉ PAR DÉFAUT
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
   const [selectedGroups, setSelectedGroups] = useState([]);
@@ -58,13 +55,11 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Atlas Historique Mondial (Haut 50% escamotable)
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
   const [mapLayers, setMapLayers] = useState({
     worldEmpires: true,
     subDivisions: true,
     tradeRoutes: false,
-    ancientCities: false,
     markers: true
   });
 
@@ -72,19 +67,14 @@ export default function TimelineCanvas() {
     setMapLayers(prev => ({ ...prev, [layerKey]: !prev[layerKey] }));
   };
   const [atlasFocusedEvent, setAtlasFocusedEvent] = useState(null);
-  
-  // 2. Année active des territoires affichés dans l'Atlas
   const [atlasActiveYear, setAtlasActiveYear] = useState(200);
 
-  // Volet latéral droit de savoir (Slide-over)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerEvent, setDrawerEvent] = useState(null);
 
-  // Volet latéral droit de modification
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [editingTargetEvent, setEditingTargetEvent] = useState(null);
 
-  // Pop-up création
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -317,7 +307,6 @@ export default function TimelineCanvas() {
 
     const gravityPeriodes = computeGravityTracks(rawPeriodes);
 
-    // Corps minéral
     const visibleX1 = Math.max(-60, xStart);
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
@@ -375,7 +364,6 @@ export default function TimelineCanvas() {
       ctx.stroke();
     }
 
-    // Dessin des périodes
     gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
@@ -523,7 +511,6 @@ export default function TimelineCanvas() {
       ctx.restore();
     });
 
-    // Graduations
     const interval = getTickInterval(span);
     const firstTick = Math.ceil(vMin / interval) * interval;
     ctx.fillStyle = currentTheme === 'light' ? '#52525b' : th.tickText;
@@ -542,7 +529,6 @@ export default function TimelineCanvas() {
       ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
     }
 
-    // Ponctuels avec étagement
     let minImportanceForText = 1;
     if (span > 5000) minImportanceForText = 4;
     else if (span > 800) minImportanceForText = 3;
@@ -622,7 +608,6 @@ export default function TimelineCanvas() {
       });
     });
 
-    // Bornes
     if (xStart >= -120 && xStart <= w + 120) {
       ctx.save();
       ctx.strokeStyle = '#ef4444';
@@ -655,7 +640,6 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // Curseur de l'Atlas
     if (isAtlasOpen && atlasActiveYear !== null) {
       const atlasX = yearToX(atlasActiveYear);
 
@@ -713,7 +697,6 @@ export default function TimelineCanvas() {
       }
     }
 
-    // Minimap
     mctx.fillStyle = th.minimapBg;
     mctx.fillRect(0, 0, mw, mh);
 
@@ -837,7 +820,6 @@ export default function TimelineCanvas() {
     drawScene();
   }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, atlasActiveYear, currentTheme]);
 
-  // Écouteurs souris et tactile
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -1239,7 +1221,6 @@ export default function TimelineCanvas() {
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", touchAction: 'none' }}>
 
-      {/* 1. ATLAS HISTORIQUE MONDIAL */}
       {isAtlasOpen && (
         <div
           style={{
@@ -1265,14 +1246,12 @@ export default function TimelineCanvas() {
         </div>
       )}
 
-      {/* 2. Slide-over lateral droit */}
       <KnowledgeSplitView
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         event={drawerEvent}
       />
 
-      {/* 3. Indicateur de date */}
       <div
         style={{
           position: 'absolute',
@@ -1308,7 +1287,6 @@ export default function TimelineCanvas() {
         </div>
       </div>
 
-      {/* 4. Barre d'outils centrée */}
       <div style={{
         position: 'absolute',
         top: isAtlasOpen ? 'calc(50% + 12px)' : 14,
@@ -1425,7 +1403,6 @@ export default function TimelineCanvas() {
         )}
       </div>
 
-      {/* 5. Volet latéral gauche des filtres */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
@@ -1458,7 +1435,6 @@ export default function TimelineCanvas() {
         onToggleMapLayer={handleToggleMapLayer}
       />
 
-      {/* Pop-up aperçu rapide ancrée */}
       {selectedEvent && (() => {
         const span = viewRange.max - viewRange.min;
         if (span <= 0) return null;
@@ -1490,7 +1466,6 @@ export default function TimelineCanvas() {
         );
       })()}
 
-      {/* Modale création */}
       <EventModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -1541,7 +1516,6 @@ export default function TimelineCanvas() {
         }}
       />
 
-      {/* Volet d'édition */}
       <EventEditDrawer
         isOpen={isEditDrawerOpen}
         onClose={() => setIsEditDrawerOpen(false)}
@@ -1553,7 +1527,6 @@ export default function TimelineCanvas() {
         availableGroups={availableGroups}
       />
 
-      {/* Canvas frise */}
       <div style={{
         position: 'absolute',
         bottom: 70,
@@ -1567,7 +1540,6 @@ export default function TimelineCanvas() {
         <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
       </div>
 
-      {/* Minimap */}
       <div style={{
         position: 'absolute',
         bottom: 0,
@@ -1575,7 +1547,7 @@ export default function TimelineCanvas() {
         width: '100%',
         height: 70,
         backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#020617',
-        borderTop: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #1e293b',
+        borderTop: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
         cursor: 'pointer',
         touchAction: 'none',
         zIndex: 15
