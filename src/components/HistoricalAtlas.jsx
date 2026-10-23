@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from 'react-l
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatYear } from '../utils/timelineMath.js';
+import WIKI_ENTITIES_MAP from '../data/wikiEntitiesMap.json';
 
 const BASE_MAPS = {
   topo: {
@@ -149,24 +150,12 @@ function extractFeatureName(props) {
   return props.name || props.NAME || props.SUBJECT || props.PARTOF || props.LABEL || props.label || props.Name || props.Route || props.empire || props.province || '';
 }
 
-const HISTORICAL_WIKI_MAP = {
-  'route de la soie': 'Route de la soie',
-  'celts': 'Celtes',
-  'suebi': 'Suèves',
-  'kingdom of gala': 'Gaïa (roi)',
-  'kingdom of syphax': 'Syphax',
-  'tarraconensis': 'Tarraconaise',
-  'lusitania': 'Lusitanie'
-};
-
-function getWikiUrl(rawName) {
-  if (!rawName || rawName.trim().length === 0) {
-    return 'https://fr.wikipedia.org/wiki/Histoire_du_monde';
-  }
-
+function findEntityMeta(rawName) {
+  if (!rawName || rawName.trim().length === 0) return null;
   const clean = rawName.trim().toLowerCase();
-  if (HISTORICAL_WIKI_MAP[clean]) {
-    return `https://fr.wikipedia.org/wiki/${encodeURIComponent(HISTORICAL_WIKI_MAP[clean])}`;
+
+  if (WIKI_ENTITIES_MAP[clean]) {
+    return WIKI_ENTITIES_MAP[clean];
   }
 
   const stripped = clean
@@ -177,11 +166,31 @@ function getWikiUrl(rawName) {
     .replace(/\s+kingdom$/i, '')
     .trim();
 
-  if (HISTORICAL_WIKI_MAP[stripped]) {
-    return `https://fr.wikipedia.org/wiki/${encodeURIComponent(HISTORICAL_WIKI_MAP[stripped])}`;
+  if (WIKI_ENTITIES_MAP[stripped]) {
+    return WIKI_ENTITIES_MAP[stripped];
   }
 
-  return `https://fr.wikipedia.org/w/index.php?search=${encodeURIComponent(stripped.length > 2 ? stripped : rawName)}&title=Sp%C3%A9cial%3ARecherche&go=Go`;
+  return null;
+}
+
+function getWikiUrl(rawName) {
+  if (!rawName || rawName.trim().length === 0) {
+    return 'https://fr.wikipedia.org/wiki/Histoire_du_monde';
+  }
+
+  const meta = findEntityMeta(rawName);
+
+  if (meta && meta.fr) {
+    return `https://fr.wikipedia.org/wiki/${encodeURIComponent(meta.fr)}`;
+  }
+
+  if (meta && meta.en) {
+    return `https://en.wikipedia.org/wiki/${encodeURIComponent(meta.en)}`;
+  }
+
+  const clean = rawName.trim();
+  const formattedEn = clean.replace(/\s+/g, '_');
+  return `https://en.wikipedia.org/wiki/${encodeURIComponent(formattedEn)}`;
 }
 
 function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
@@ -548,10 +557,11 @@ export default function HistoricalAtlas({
             }}
             onEachFeature={(feature, layer) => {
               const detectedName = extractFeatureName(feature?.properties);
-              const displayName = detectedName || 'Territoire / Empire non documenté';
-              const cleanLower = detectedName.trim().toLowerCase();
-              const frName = HISTORICAL_WIKI_MAP[cleanLower];
-              const titleForPopup = frName ? `${detectedName} (${frName})` : displayName;
+              const meta = findEntityMeta(detectedName);
+              const frenchLabel = meta?.fr ? meta.fr.replace(/_/g, ' ') : null;
+              const displayName = frenchLabel 
+                ? `${detectedName} (${frenchLabel})` 
+                : (detectedName || 'Territoire / Empire non documenté');
 
               layer.bindTooltip(`<strong>${displayName}</strong> (${formatYear(activeMapSlice)})`, {
                 sticky: true
@@ -563,7 +573,7 @@ export default function HistoricalAtlas({
                     Empire / Royaume (${formatYear(activeMapSlice)})
                   </div>
                   <div style="font-size:14px; font-weight:700; color:#1c1917; margin-bottom:8px;">
-                    ${titleForPopup}
+                    ${displayName}
                   </div>
                   <a 
                     href="${getWikiUrl(detectedName)}" 
@@ -597,8 +607,9 @@ export default function HistoricalAtlas({
             }}
             onEachFeature={(feature, layer) => {
               const rawName = extractFeatureName(feature?.properties) || 'Province';
-              const cleanLower = rawName.trim().toLowerCase();
-              const displayName = HISTORICAL_WIKI_MAP[cleanLower] ? `${rawName} (${HISTORICAL_WIKI_MAP[cleanLower]})` : rawName;
+              const meta = findEntityMeta(rawName);
+              const frenchLabel = meta?.fr ? meta.fr.replace(/_/g, ' ') : null;
+              const displayName = frenchLabel ? `${rawName} (${frenchLabel})` : rawName;
 
               layer.bindTooltip(`<strong>${displayName}</strong><br/><span style="font-size:10px; color:#57534e;">Province romaine</span>`, {
                 sticky: true
