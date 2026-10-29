@@ -262,7 +262,17 @@ export default function HistoricalAtlas({
     return Math.round((viewRange.min + viewRange.max) / 2);
   }, [viewRange]);
 
+  // Seuil au-delà duquel aucune frontière étatique n'est requêtée (-5000 av. J.-C.)
+  const hasTerritoryData = currentCenterYear >= -5000;
+
   useEffect(() => {
+    if (!hasTerritoryData) {
+      setWorldGeoJson(null);
+      setActiveMapSlice(null);
+      setIsLoadingBorders(false);
+      return;
+    }
+
     const { year: targetYear, filename } = getClosestHistoricalFile(currentCenterYear);
 
     if (activeMapSlice === targetYear && worldGeoJson) {
@@ -306,10 +316,13 @@ export default function HistoricalAtlas({
             setIsLoadingBorders(false);
           });
       });
-  }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange]);
+  }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange, hasTerritoryData]);
 
   useEffect(() => {
-    if (!mapLayers.subDivisions) return;
+    if (!mapLayers.subDivisions || !hasTerritoryData) {
+      setSubDivisionsGeoJson(null);
+      return;
+    }
 
     const isClassicalEra = currentCenterYear >= -500 && currentCenterYear <= 500;
     const subDivKey = isClassicalEra ? 'dare_provinces' : 'none';
@@ -345,7 +358,7 @@ export default function HistoricalAtlas({
     } else {
       setSubDivisionsGeoJson(null);
     }
-  }, [currentCenterYear, mapLayers.subDivisions]);
+  }, [currentCenterYear, mapLayers.subDivisions, hasTerritoryData]);
 
   const activeEvents = useMemo(() => {
     if (!viewRange) return [];
@@ -485,9 +498,12 @@ export default function HistoricalAtlas({
           </button>
         </div>
 
-        {/* Année sans emoji */}
+        {/* Année ou libellé de période */}
         <span style={{ color: '#1c1917', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
+          {hasTerritoryData 
+            ? (activeMapSlice !== null ? formatYear(activeMapSlice) : '...')
+            : (currentCenterYear < -300000 ? 'Temps géologique' : 'Préhistoire')
+          }
         </span>
 
         {/* Repères sans emoji */}
@@ -538,7 +554,7 @@ export default function HistoricalAtlas({
           maxZoom={currentBaseMap.maxZoom}
         />
 
-        {mapLayers.worldEmpires && worldGeoJson && (
+        {hasTerritoryData && mapLayers.worldEmpires && worldGeoJson && (
           <GeoJSON
             key={`world-layer-${activeMapSlice}`}
             data={worldGeoJson}
@@ -587,7 +603,7 @@ export default function HistoricalAtlas({
           />
         )}
 
-        {mapLayers.subDivisions && subDivisionsGeoJson && (
+        {hasTerritoryData && mapLayers.subDivisions && subDivisionsGeoJson && (
           <GeoJSON
             key={`subdivisions-layer-${currentCenterYear}`}
             data={subDivisionsGeoJson}
@@ -635,7 +651,7 @@ export default function HistoricalAtlas({
           />
         )}
 
-        {mapLayers.tradeRoutes && (
+        {hasTerritoryData && mapLayers.tradeRoutes && (
           <GeoJSON
             key="silk-road-layer"
             data={SILK_ROAD_GEOJSON}

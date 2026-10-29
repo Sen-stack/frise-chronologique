@@ -6,15 +6,111 @@ export const HANDLE_WIDTH = 10;
 export const MINI_HEIGHT = 70;
 export const BAR_HEIGHT = 46;
 
-// Segments des grandes époques pour la minimap
-export const PERIOD_SEGMENTS = [
-  { id: "cosmo", nom: "Cosmologie", start: -4500000000, end: -300000, ratio: 0.20, color: "#312e81" },
-  { id: "prehist", nom: "Préhistoire", start: -300000, end: -3500, ratio: 0.16, color: "#1e3a5f" },
-  { id: "antiq", nom: "Antiquité", start: -3500, end: 476, ratio: 0.16, color: "#065f46" },
-  { id: "moyenage", nom: "Moyen Âge", start: 476, end: 1492, ratio: 0.16, color: "#854d0e" },
-  { id: "moderne", nom: "Ép. moderne", start: 1492, end: 1789, ratio: 0.16, color: "#9a3412" },
-  { id: "contemp", nom: "Contemporain", start: 1789, end: 2026, ratio: 0.16, color: "#991b1b" }
+// Définition des 3 grandes tranches temporelles fonctionnelles avec bornes strictes
+export const TIMELINE_CHAPTERS = [
+  {
+    id: "geologie",
+    label: "Temps géologique",
+    min: -4500000000,
+    max: -300000,
+    defaultView: { min: -4500000000, max: -300000 },
+    hasMapData: false,
+    unit: "Ga / Ma"
+  },
+  {
+    id: "prehistoire",
+    label: "Préhistoire",
+    min: -300000,
+    max: -5000,
+    defaultView: { min: -300000, max: -5000 },
+    hasMapData: false,
+    unit: "Millénaires"
+  },
+  {
+    id: "histoire",
+    label: "Histoire & Civilisations",
+    min: -5000,
+    max: 2026,
+    defaultView: { min: -3500, max: 2026 },
+    hasMapData: true,
+    unit: "Siècles / Années"
+  }
 ];
+
+// Segments de la minimap dédiés à chaque tranche
+export const CHAPTER_SEGMENTS = {
+  geologie: [
+    { id: "hadean", nom: "Hadéen", start: -4500000000, end: -4000000000, ratio: 0.20, color: "#9e5c54" },
+    { id: "archean", nom: "Archéen", start: -4000000000, end: -2500000000, ratio: 0.25, color: "#8a584c" },
+    { id: "protero", nom: "Protérozoïque", start: -2500000000, end: -541000000, ratio: 0.25, color: "#6e685f" },
+    { id: "paleozoic", nom: "Paléozoïque", start: -541000000, end: -252000000, ratio: 0.12, color: "#6e8b7d" },
+    { id: "mesozoic", nom: "Mésozoïque", start: -252000000, end: -66000000, ratio: 0.10, color: "#62788e" },
+    { id: "cenozoic", nom: "Cénozoïque", start: -66000000, end: -300000, ratio: 0.08, color: "#c99a4e" }
+  ],
+  prehistoire: [
+    { id: "paleo_inf", nom: "Paléo. inf.", start: -300000, end: -120000, ratio: 0.30, color: "#9e5c54" },
+    { id: "paleo_moy", nom: "Paléo. moyen", start: -120000, end: -40000, ratio: 0.28, color: "#bfa382" },
+    { id: "paleo_sup", nom: "Paléo. sup.", start: -40000, end: -12000, ratio: 0.20, color: "#6e8b7d" },
+    { id: "meso", nom: "Mésolithique", start: -12000, end: -8000, ratio: 0.11, color: "#62788e" },
+    { id: "neo", nom: "Néolithique", start: -8000, end: -5000, ratio: 0.11, color: "#c99a4e" }
+  ],
+  histoire: [
+    { id: "antiq_anc", nom: "Protohistoire", start: -5000, end: -3500, ratio: 0.15, color: "#bfa382" },
+    { id: "antiq", nom: "Antiquité", start: -3500, end: 476, ratio: 0.25, color: "#6e8b7d" },
+    { id: "moyenage", nom: "Moyen Âge", start: 476, end: 1492, ratio: 0.20, color: "#62788e" },
+    { id: "moderne", nom: "Ép. moderne", start: 1492, end: 1789, ratio: 0.20, color: "#b89063" },
+    { id: "contemp", nom: "Contemporain", start: 1789, end: 2026, ratio: 0.20, color: "#c99a4e" }
+  ]
+};
+
+// Segments globaux par défaut (rétrocompatibilité)
+export const PERIOD_SEGMENTS = [
+  { id: "cosmo", nom: "Cosmologie", start: -4500000000, end: -300000, ratio: 0.20, color: "#9e5c54" },
+  { id: "prehist", nom: "Préhistoire", start: -300000, end: -3500, ratio: 0.16, color: "#bfa382" },
+  { id: "antiq", nom: "Antiquité", start: -3500, end: 476, ratio: 0.16, color: "#6e8b7d" },
+  { id: "moyenage", nom: "Moyen Âge", start: 476, end: 1492, ratio: 0.16, color: "#62788e" },
+  { id: "moderne", nom: "Ép. moderne", start: 1492, end: 1789, ratio: 0.16, color: "#b89063" },
+  { id: "contemp", nom: "Contemporain", start: 1789, end: 2026, ratio: 0.16, color: "#c99a4e" }
+];
+
+// Récupère les segments de minimap adaptés au chapitre
+export function getChapterSegments(chapterId = 'histoire') {
+  return CHAPTER_SEGMENTS[chapterId] || CHAPTER_SEGMENTS.histoire;
+}
+
+// Convertit une année en coordonnée X selon la tranche active
+export function yearToChapterMiniX(year, width, chapterId = 'histoire') {
+  const chapter = TIMELINE_CHAPTERS.find(c => c.id === chapterId) || TIMELINE_CHAPTERS[2];
+  const clamped = Math.max(chapter.min, Math.min(chapter.max, year));
+  const segments = getChapterSegments(chapterId);
+
+  let accRatio = 0;
+  for (const seg of segments) {
+    if (clamped <= seg.end) {
+      const segProgress = (clamped - seg.start) / (seg.end - seg.start);
+      return (accRatio + segProgress * seg.ratio) * width;
+    }
+    accRatio += seg.ratio;
+  }
+  return width;
+}
+
+// Convertit une coordonnée X en année selon la tranche active
+export function miniXToChapterYear(x, width, chapterId = 'histoire') {
+  const chapter = TIMELINE_CHAPTERS.find(c => c.id === chapterId) || TIMELINE_CHAPTERS[2];
+  const progress = Math.max(0, Math.min(1, x / width));
+  const segments = getChapterSegments(chapterId);
+
+  let accRatio = 0;
+  for (const seg of segments) {
+    if (progress <= accRatio + seg.ratio) {
+      const segProgress = (progress - accRatio) / seg.ratio;
+      return seg.start + segProgress * (seg.end - seg.start);
+    }
+    accRatio += seg.ratio;
+  }
+  return chapter.max;
+}
 
 // Palette par défaut des tags
 export const DEFAULT_TAG_PALETTE = {
@@ -45,11 +141,12 @@ export function getAutoPeriod(year) {
   return "Contemporain";
 }
 
-// Formatage lisible des années (-4.5 Ga, -331 av. J.-C., 2026)
+// Formatage lisible des années (-4.5 Ga, -300 ka, -331 av. J.-C., 2026)
 export function formatYear(year) {
   const rounded = Math.round(year);
   if (Math.abs(rounded) >= 1_000_000_000) return (rounded / 1_000_000_000).toFixed(2) + " Ga";
   if (Math.abs(rounded) >= 1_000_000) return (rounded / 1_000_000).toFixed(1) + " Ma";
+  if (rounded <= -10000) return Math.abs(Math.round(rounded / 1000)) + " ka BP";
   if (rounded < 0) return Math.abs(rounded) + " av. J.-C.";
   return rounded.toString();
 }

@@ -10,6 +10,12 @@ import {
   MINI_PAD,
   HANDLE_WIDTH,
   MINI_HEIGHT,
+  BAR_HEIGHT,
+  TIMELINE_CHAPTERS,
+  CHAPTER_SEGMENTS,
+  getChapterSegments,
+  yearToChapterMiniX,
+  miniXToChapterYear,
   formatYear,
   getTickInterval,
   getAutoPeriod,
@@ -23,11 +29,24 @@ import KnowledgeSplitView from './KnowledgeSplitView.jsx';
 import EventEditDrawer from './EventEditDrawer.jsx';
 import HistoricalAtlas from './HistoricalAtlas.jsx';
 
+// Palette pastel et harmonieuse pour les segments du dock minimap
+const MODERN_MINI_PALETTE = {
+  cosmo: '#9e5c54',
+  prehist: '#bfa382',
+  antiq: '#6e8b7d',
+  moyenage: '#62788e',
+  moderne: '#b89063',
+  contemp: '#c99a4e'
+};
+
 export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
   const canvasMiniRef = useRef(null);
 
-  const [viewRange, setViewRange] = useState({ min: -1000, max: 2026 });
+  // Chapitre temporel actif (par défaut : Histoire)
+  const [activeChapter, setActiveChapter] = useState('histoire');
+
+  const [viewRange, setViewRange] = useState({ min: -3500, max: 2026 });
   const [currentTheme, setCurrentTheme] = useState(() => {
     return localStorage.getItem('chronos_theme') || 'light';
   });
@@ -54,7 +73,7 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Ratios rééquilibrés pour éviter l'écrasement sur mobile
+  // Ratios rééquilibrés pour mobile et desktop
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
 
@@ -100,10 +119,19 @@ export default function TimelineCanvas() {
   const viewRef = useRef(viewRange);
   useEffect(() => { viewRef.current = viewRange; }, [viewRange]);
 
-  const targetViewRef = useRef({ min: -1000, max: 2026 });
+  const targetViewRef = useRef({ min: -3500, max: 2026 });
   const animFrameRef = useRef(null);
   const textureShiftRef = useRef(0);
   const stonePatternRef = useRef(null);
+
+  const activeChapterRef = useRef(activeChapter);
+  useEffect(() => { activeChapterRef.current = activeChapter; }, [activeChapter]);
+
+  // Récupère les bornes min/max infranchissables de la tranche active
+  const getActiveBounds = () => {
+    const chapter = TIMELINE_CHAPTERS.find(c => c.id === activeChapterRef.current);
+    return chapter ? { min: chapter.min, max: chapter.max } : { min: GLOBAL_MIN, max: GLOBAL_MAX };
+  };
 
   useEffect(() => {
     const stoneNoise = document.createElement('canvas');
@@ -150,6 +178,22 @@ export default function TimelineCanvas() {
   };
 
   const smoothSetView = (nextTgt, deltaX = 0) => {
+    const bounds = getActiveBounds();
+    let span = nextTgt.max - nextTgt.min;
+    const maxAllowedSpan = bounds.max - bounds.min;
+
+    if (span > maxAllowedSpan) {
+      span = maxAllowedSpan;
+      nextTgt = { min: bounds.min, max: bounds.max };
+    }
+
+    if (nextTgt.min < bounds.min) {
+      nextTgt = { min: bounds.min, max: bounds.min + span };
+    }
+    if (nextTgt.max > bounds.max) {
+      nextTgt = { min: bounds.max - span, max: bounds.max };
+    }
+
     targetViewRef.current = nextTgt;
     if (deltaX !== 0) {
       textureShiftRef.current += deltaX;
@@ -157,6 +201,16 @@ export default function TimelineCanvas() {
     if (!animFrameRef.current) {
       animFrameRef.current = requestAnimationFrame(updateInertia);
     }
+  };
+
+  const handleSelectChapter = (chapterId) => {
+    const chapter = TIMELINE_CHAPTERS.find(c => c.id === chapterId);
+    if (!chapter) return;
+    setActiveChapter(chapterId);
+    activeChapterRef.current = chapterId;
+    setSelectedEvent(null);
+    targetViewRef.current = chapter.defaultView;
+    setViewRange(chapter.defaultView);
   };
 
   const eventsRef = useRef(events);
@@ -178,34 +232,6 @@ export default function TimelineCanvas() {
   }, [filterMode, selectedTags, selectedGroups, customSelectedIds]);
 
   const hitboxesRef = useRef([]);
-
-  const yearToMiniX = (year, width) => {
-    const clamped = Math.max(GLOBAL_MIN, Math.min(GLOBAL_MAX, year));
-    const usableW = width - 2 * MINI_PAD;
-    let accRatio = 0;
-    for (const seg of PERIOD_SEGMENTS) {
-      if (clamped <= seg.end) {
-        const segProgress = (clamped - seg.start) / (seg.end - seg.start);
-        return MINI_PAD + (accRatio + segProgress * seg.ratio) * usableW;
-      }
-      accRatio += seg.ratio;
-    }
-    return MINI_PAD + usableW;
-  };
-
-  const miniXToYear = (x, width) => {
-    const usableW = width - 2 * MINI_PAD;
-    const progress = Math.max(0, Math.min(1, (x - MINI_PAD) / usableW));
-    let accRatio = 0;
-    for (const seg of PERIOD_SEGMENTS) {
-      if (progress <= accRatio + seg.ratio) {
-        const segProgress = (progress - accRatio) / seg.ratio;
-        return seg.start + segProgress * (seg.end - seg.start);
-      }
-      accRatio += seg.ratio;
-    }
-    return GLOBAL_MAX;
-  };
 
   const computeGravityTracks = (periodesList) => {
     const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - a.date_fin));
@@ -275,6 +301,8 @@ export default function TimelineCanvas() {
 
     if (w === 0 || h === 0 || mw === 0 || mh === 0) return;
 
+    const currentBounds = getActiveBounds();
+    const activeChapterConfig = TIMELINE_CHAPTERS.find(c => c.id === activeChapterRef.current);
     const { min: vMin, max: vMax } = viewRef.current;
     const span = vMax - vMin;
     const yearToX = (year) => ((year - vMin) / span) * w;
@@ -283,7 +311,6 @@ export default function TimelineCanvas() {
     hitboxesRef.current = [];
 
     const isMobile = w < 640;
-    // Calage vertical optimisé : la frise reste toujours au centre de son espace
     const barY = Math.round(h * (isMobile ? 0.60 : 0.58));
 
     const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
@@ -293,13 +320,17 @@ export default function TimelineCanvas() {
 
     const defaultHalfH = Math.round((isMobile ? 22 : 26) + zoomFactor * (isMobile ? 16 : 28));
 
-    const xStart = yearToX(GLOBAL_MIN);
-    const xEnd = yearToX(GLOBAL_MAX);
+    const xStart = yearToX(currentBounds.min);
+    const xEnd = yearToX(currentBounds.max);
 
     const allEvents = eventsRef.current || [];
     const activeFilter = filterRef.current;
 
     const filteredList = allEvents.filter(evt => {
+      const debut = evt.date_debut;
+      const fin = evt.date_fin ?? debut;
+      if (fin < currentBounds.min || debut > currentBounds.max) return false;
+
       if (activeFilter.mode === 'custom') {
         return activeFilter.customIds.has(evt.id);
       }
@@ -527,7 +558,7 @@ export default function TimelineCanvas() {
     ctx.textAlign = 'center';
 
     for (let t = firstTick; t <= vMax; t += interval) {
-      if (t < GLOBAL_MIN || t > GLOBAL_MAX) continue;
+      if (t < currentBounds.min || t > currentBounds.max) continue;
       const tx = yearToX(t);
       ctx.strokeStyle = currentTheme === 'light' ? 'rgba(113, 113, 122, 0.4)' : th.ticks;
       ctx.lineWidth = 1;
@@ -617,6 +648,7 @@ export default function TimelineCanvas() {
       });
     });
 
+    // Marqueurs de début et de fin de la tranche active
     if (xStart >= -120 && xStart <= w + 120) {
       ctx.save();
       ctx.strokeStyle = '#ef4444';
@@ -629,7 +661,7 @@ export default function TimelineCanvas() {
       ctx.fillStyle = '#ef4444';
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText("Origine (-4.5 Ga)", xStart - 8, barY);
+      ctx.fillText(formatYear(currentBounds.min), xStart - 8, barY);
       ctx.restore();
     }
 
@@ -645,123 +677,185 @@ export default function TimelineCanvas() {
       ctx.fillStyle = '#10b981';
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText("Présent (2026)", xEnd + 8, barY);
+      ctx.fillText(formatYear(currentBounds.max), xEnd + 8, barY);
       ctx.restore();
     }
 
-    if (isAtlasOpen && atlasActiveYear !== null) {
-      const atlasX = yearToX(atlasActiveYear);
+    // Le repère vertical de la carte n'est affiché QUE sur la tranche Histoire
+    if (isAtlasOpen && activeChapterConfig?.hasMapData && atlasActiveYear !== null) {
+      if (atlasActiveYear >= currentBounds.min && atlasActiveYear <= currentBounds.max) {
+        const atlasX = yearToX(atlasActiveYear);
 
-      if (atlasX >= -100 && atlasX <= w + 100) {
-        ctx.save();
+        if (atlasX >= -100 && atlasX <= w + 100) {
+          ctx.save();
 
-        const gradient = ctx.createLinearGradient(atlasX - 18, 0, atlasX + 18, 0);
-        gradient.addColorStop(0, 'rgba(180, 83, 9, 0)');
-        gradient.addColorStop(0.5, 'rgba(180, 83, 9, 0.18)');
-        gradient.addColorStop(1, 'rgba(180, 83, 9, 0)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(atlasX - 18, 0, 36, h);
+          const gradient = ctx.createLinearGradient(atlasX - 18, 0, atlasX + 18, 0);
+          gradient.addColorStop(0, 'rgba(180, 83, 9, 0)');
+          gradient.addColorStop(0.5, 'rgba(180, 83, 9, 0.18)');
+          gradient.addColorStop(1, 'rgba(180, 83, 9, 0)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(atlasX - 18, 0, 36, h);
 
-        ctx.strokeStyle = '#b45309';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(atlasX, 0);
-        ctx.lineTo(atlasX, h);
-        ctx.stroke();
-        ctx.setLineDash([]);
+          ctx.strokeStyle = '#b45309';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(atlasX, 0);
+          ctx.lineTo(atlasX, h);
+          ctx.stroke();
+          ctx.setLineDash([]);
 
-        const labelText = `Carte : ${formatYear(atlasActiveYear)}`;
-        ctx.font = '600 10px system-ui, sans-serif';
-        const labelW = ctx.measureText(labelText).width + 16;
-        const badgeY = 8;
+          const labelText = `Carte : ${formatYear(atlasActiveYear)}`;
+          ctx.font = '600 10px system-ui, sans-serif';
+          const labelW = ctx.measureText(labelText).width + 16;
+          const badgeY = 8;
 
-        ctx.fillStyle = '#b45309';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-        ctx.shadowBlur = 6;
-        ctx.shadowOffsetY = 2;
+          ctx.fillStyle = '#b45309';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+          ctx.shadowBlur = 6;
+          ctx.shadowOffsetY = 2;
 
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(atlasX - labelW / 2, badgeY, labelW, 18, 4);
-        } else {
-          ctx.rect(atlasX - labelW / 2, badgeY, labelW, 18);
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(atlasX - labelW / 2, badgeY, labelW, 18, 4);
+          } else {
+            ctx.rect(atlasX - labelW / 2, badgeY, labelW, 18);
+          }
+          ctx.fill();
+
+          ctx.shadowColor = 'transparent';
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, atlasX, badgeY + 9);
+
+          ctx.restore();
         }
-        ctx.fill();
-
-        ctx.shadowColor = 'transparent';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, atlasX, badgeY + 9);
-
-        ctx.restore();
       }
     }
 
-    mctx.fillStyle = th.minimapBg;
-    mctx.fillRect(0, 0, mw, mh);
+    // ========================================================
+    // --- RENDU DU DOCK MINIMAP ADAPTÉ À LA TRANCHE ACTIVE ---
+    // ========================================================
+    mctx.clearRect(0, 0, mw, mh);
 
-    const usableW = mw - 2 * MINI_PAD;
-    let currentX = MINI_PAD;
+    const activeSegments = getChapterSegments(activeChapter);
 
-    PERIOD_SEGMENTS.forEach(seg => {
-      const segWidth = seg.ratio * usableW;
+    let curSegX = 0;
+    activeSegments.forEach((seg, i) => {
+      const segW = seg.ratio * mw;
       mctx.fillStyle = seg.color;
-      mctx.fillRect(currentX, 6, segWidth, 26);
-      mctx.strokeStyle = '#0f172a';
-      mctx.lineWidth = 1;
-      mctx.strokeRect(currentX, 6, segWidth, 26);
+      mctx.fillRect(curSegX, 0, segW, mh);
 
-      mctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      mctx.font = isMobile ? '8px sans-serif' : '10px sans-serif';
-      mctx.textAlign = 'center';
-      mctx.fillText(isMobile ? seg.nom.slice(0, 4) : seg.nom, currentX + segWidth / 2, 22);
-      currentX += segWidth;
-    });
-
-    filteredList.forEach(evt => {
-      const mx = yearToMiniX(evt.date_debut, mw);
-      const style = getItemStyle(evt);
-      if (evt.date_fin) {
-        const mx2 = yearToMiniX(evt.date_fin, mw);
-        const mW = Math.max(2, Math.abs(mx2 - mx));
-        mctx.fillStyle = style.fill;
-        mctx.fillRect(Math.min(mx, mx2), 34, mW, 6);
-      } else {
-        mctx.fillStyle = style.stroke;
-        mctx.fillRect(mx - 1, 34, 2, 6);
+      if (i > 0) {
+        mctx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
+        mctx.lineWidth = 1;
+        mctx.beginPath();
+        mctx.moveTo(curSegX, 0);
+        mctx.lineTo(curSegX, mh);
+        mctx.stroke();
       }
+
+      mctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+      mctx.font = isMobile ? '700 7.5px system-ui, sans-serif' : '700 8.5px system-ui, sans-serif';
+      mctx.textAlign = 'center';
+      const labelText = isMobile ? seg.nom.slice(0, 5) : seg.nom.toUpperCase();
+      mctx.fillText(labelText, curSegX + segW / 2, 12);
+
+      curSegX += segW;
     });
 
-    if (isAtlasOpen && atlasActiveYear !== null) {
-      const atlasMiniX = yearToMiniX(atlasActiveYear, mw);
-      mctx.fillStyle = '#b45309';
-      mctx.fillRect(atlasMiniX - 1, 4, 2, 40);
+    // Courbe d'activité calculée uniquement sur les données de la tranche active
+    const numBuckets = isMobile ? 12 : 24;
+    const densityBins = new Array(numBuckets).fill(0);
+    filteredList.forEach(evt => {
+      const yr = evt.date_debut;
+      const xPos = yearToChapterMiniX(yr, mw, activeChapter);
+      const binIdx = Math.max(0, Math.min(numBuckets - 1, Math.floor((xPos / mw) * numBuckets)));
+      densityBins[binIdx] += 1;
+    });
+
+    const maxDensity = Math.max(1, ...densityBins);
+    const wavePoints = densityBins.map((count, idx) => {
+      const px = (idx + 0.5) * (mw / numBuckets);
+      const normalizedH = Math.pow(count / maxDensity, 0.6) * (mh * 0.44);
+      return { x: px, y: mh - 8 - normalizedH };
+    });
+
+    if (wavePoints.length > 1) {
+      mctx.save();
+      mctx.beginPath();
+      mctx.moveTo(0, wavePoints[0].y);
+      mctx.lineTo(wavePoints[0].x, wavePoints[0].y);
+
+      for (let i = 0; i < wavePoints.length - 1; i++) {
+        const xc = (wavePoints[i].x + wavePoints[i + 1].x) / 2;
+        const yc = (wavePoints[i].y + wavePoints[i + 1].y) / 2;
+        mctx.quadraticCurveTo(wavePoints[i].x, wavePoints[i].y, xc, yc);
+      }
+      mctx.lineTo(mw, wavePoints[wavePoints.length - 1].y);
+
+      mctx.strokeStyle = 'rgba(20, 24, 33, 0.72)';
+      mctx.lineWidth = 2.2;
+      mctx.stroke();
+      mctx.restore();
     }
 
-    const vx1 = yearToMiniX(vMin, mw);
-    const vx2 = yearToMiniX(vMax, mw);
+    if (isAtlasOpen && activeChapterConfig?.hasMapData && atlasActiveYear !== null) {
+      if (atlasActiveYear >= currentBounds.min && atlasActiveYear <= currentBounds.max) {
+        const atlasMiniX = yearToChapterMiniX(atlasActiveYear, mw, activeChapter);
+        mctx.fillStyle = '#b45309';
+        mctx.fillRect(atlasMiniX - 1.5, 0, 3, mh);
+      }
+    }
+
+    // Curseur de sélection (Viewport Dock)
+    const vx1 = yearToChapterMiniX(vMin, mw, activeChapter);
+    const vx2 = yearToChapterMiniX(vMax, mw, activeChapter);
     const left = Math.min(vx1, vx2);
     const right = Math.max(vx1, vx2);
-    const bWidth = Math.max(10, right - left);
+    const bWidth = Math.max(64, right - left);
+    const topY = 6;
+    const selH = mh - 12;
+    const cornerRadius = 16;
 
-    mctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
-    mctx.fillRect(left, 4, bWidth, 40);
-    mctx.strokeStyle = th.viewportBorder;
-    mctx.lineWidth = 2;
-    mctx.strokeRect(left, 4, bWidth, 40);
+    mctx.save();
+    mctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
+    mctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
+    mctx.shadowBlur = 10;
+    mctx.shadowOffsetY = 2;
 
-    mctx.fillStyle = '#ffffff';
-    mctx.fillRect(left, 6, 4, 36);
-    mctx.fillRect(left + bWidth - 4, 6, 4, 36);
+    mctx.beginPath();
+    if (mctx.roundRect) {
+      mctx.roundRect(left, topY, bWidth, selH, cornerRadius);
+    } else {
+      mctx.rect(left, topY, bWidth, selH);
+    }
+    mctx.fill();
 
-    mctx.fillStyle = '#94a3b8';
-    mctx.font = '9px monospace, sans-serif';
-    mctx.textAlign = 'left';
-    mctx.fillText("-4.5 Ga", MINI_PAD, 56);
-    mctx.textAlign = 'right';
-    mctx.fillText("2026", mw - MINI_PAD, 56);
+    mctx.shadowColor = 'transparent';
+    mctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    mctx.lineWidth = 1.8;
+    mctx.stroke();
+
+    mctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    mctx.beginPath();
+    mctx.arc(left + 8, topY + selH / 2, 4.5, 0, Math.PI * 2);
+    mctx.fill();
+
+    mctx.beginPath();
+    mctx.arc(left + bWidth - 8, topY + selH / 2, 4.5, 0, Math.PI * 2);
+    mctx.fill();
+
+    if (bWidth > (isMobile ? 70 : 88)) {
+      const labelRange = `${formatYear(vMin)} — ${formatYear(vMax)}`;
+      mctx.fillStyle = '#1e293b';
+      mctx.font = isMobile ? '700 8.5px monospace, system-ui, sans-serif' : '700 9.5px monospace, system-ui, sans-serif';
+      mctx.textAlign = 'center';
+      mctx.textBaseline = 'middle';
+      mctx.fillText(labelRange, left + bWidth / 2, topY + selH / 2);
+    }
+    mctx.restore();
   };
 
   const HEADER_H = 44;
@@ -776,13 +870,17 @@ export default function TimelineCanvas() {
     const actualRatio = isAtlasOpen ? splitRatio : 0;
     const atlasH = Math.round(availableAreaH * actualRatio);
     const timelineAreaH = availableAreaH - atlasH;
-    const mainH = Math.max(80, timelineAreaH - MINI_HEIGHT);
+    const mainH = Math.max(80, timelineAreaH - 74);
 
     canvasMainRef.current.width = Math.round(totalW * dpr);
     canvasMainRef.current.height = Math.round(mainH * dpr);
 
-    canvasMiniRef.current.width = Math.round(totalW * dpr);
-    canvasMiniRef.current.height = Math.round(MINI_HEIGHT * dpr);
+    const miniRect = canvasMiniRef.current.getBoundingClientRect();
+    const miniW = miniRect.width || Math.min(980, Math.round(totalW * 0.92));
+    const miniH = 56;
+
+    canvasMiniRef.current.width = Math.round(miniW * dpr);
+    canvasMiniRef.current.height = Math.round(miniH * dpr);
 
     drawScene();
   };
@@ -819,7 +917,6 @@ export default function TimelineCanvas() {
     chargerEvenements();
   }, []);
 
-  // Déclenchement automatique immédiat sur changement de splitRatio ou repli de l'Atlas
   useEffect(() => {
     updateSizesAndDraw();
   }, [isAtlasOpen, splitRatio]);
@@ -831,7 +928,7 @@ export default function TimelineCanvas() {
 
   useEffect(() => {
     drawScene();
-  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, splitRatio, atlasActiveYear, currentTheme]);
+  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, splitRatio, atlasActiveYear, currentTheme, activeChapter]);
 
   useEffect(() => {
     const cMain = canvasMainRef.current;
@@ -967,26 +1064,33 @@ export default function TimelineCanvas() {
       }
     };
 
+    const getMiniClientX = (clientX) => {
+      const rect = cMini.getBoundingClientRect();
+      return clientX - rect.left;
+    };
+
     const onMiniStart = (clientX) => {
       const mw = cMini.clientWidth;
+      const cx = getMiniClientX(clientX);
+      const chId = activeChapterRef.current;
       const { min: vMin, max: vMax } = targetViewRef.current;
-      const vx1 = yearToMiniX(vMin, mw);
-      const vx2 = yearToMiniX(vMax, mw);
+      const vx1 = yearToChapterMiniX(vMin, mw, chId);
+      const vx2 = yearToChapterMiniX(vMax, mw, chId);
       const left = Math.min(vx1, vx2);
       const right = Math.max(vx1, vx2);
 
-      miniDragStartX = clientX;
+      miniDragStartX = cx;
       miniStartMin = vMin;
       miniStartMax = vMax;
 
-      if (Math.abs(clientX - left) <= HANDLE_WIDTH + 8) {
+      if (Math.abs(cx - left) <= 16) {
         miniMode = 'left';
-      } else if (Math.abs(clientX - right) <= HANDLE_WIDTH + 8) {
+      } else if (Math.abs(cx - right) <= 16) {
         miniMode = 'right';
-      } else if (clientX > left && clientX < right) {
+      } else if (cx > left && cx < right) {
         miniMode = 'move';
       } else {
-        const clickedYear = miniXToYear(clientX, mw);
+        const clickedYear = miniXToChapterYear(cx, mw, chId);
         const currentSpan = vMax - vMin;
         smoothSetView({ min: clickedYear - currentSpan / 2, max: clickedYear + currentSpan / 2 });
         miniMode = 'move';
@@ -995,15 +1099,22 @@ export default function TimelineCanvas() {
 
     const onMiniMove = (clientX) => {
       const mw = cMini.clientWidth;
-      const targetYear = miniXToYear(clientX, mw);
+      const cx = getMiniClientX(clientX);
+      const chId = activeChapterRef.current;
+      const targetYear = miniXToChapterYear(cx, mw, chId);
+
       if (miniMode === 'move') {
-        const startYear = miniXToYear(miniDragStartX, mw);
+        const startYear = miniXToChapterYear(miniDragStartX, mw, chId);
         const shift = targetYear - startYear;
         smoothSetView({ min: miniStartMin + shift, max: miniStartMax + shift });
       } else if (miniMode === 'left') {
-        if (targetViewRef.current.max - targetYear >= 1) smoothSetView({ min: targetYear, max: targetViewRef.current.max });
+        if (targetViewRef.current.max - targetYear >= 5) {
+          smoothSetView({ min: targetYear, max: targetViewRef.current.max });
+        }
       } else if (miniMode === 'right') {
-        if (targetYear - targetViewRef.current.min >= 1) smoothSetView({ min: targetYear, max: targetViewRef.current.max });
+        if (targetYear - targetViewRef.current.min >= 5) {
+          smoothSetView({ min: targetViewRef.current.min, max: targetYear });
+        }
       }
     };
 
@@ -1060,7 +1171,7 @@ export default function TimelineCanvas() {
       cMini.removeEventListener('touchmove', onMiniTouchMove);
       cMini.removeEventListener('touchend', onEnd);
     };
-  }, [isEditDrawerOpen]);
+  }, [isEditDrawerOpen, activeChapter]);
 
   const handleOpenCreateModal = () => {
     setFormError('');
@@ -1257,7 +1368,7 @@ export default function TimelineCanvas() {
         boxSizing: 'border-box',
         zIndex: 30
       }}>
-        {/* Sélecteur de split et bascule */}
+        {/* Sélecteur de split et bascule Atlas */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <div style={{
             display: 'flex',
@@ -1333,6 +1444,40 @@ export default function TimelineCanvas() {
           >
             {isAtlasOpen ? 'Masquer' : 'Afficher'}
           </button>
+        </div>
+
+        {/* ONGLETS DES 3 GRANDES TRANCHES TEMPORELLES */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          backgroundColor: isLight ? '#ede7dc' : '#1e293b',
+          padding: 2,
+          borderRadius: 8,
+          gap: 2
+        }}>
+          {TIMELINE_CHAPTERS.map(ch => {
+            const isActive = activeChapter === ch.id;
+            return (
+              <button
+                key={ch.id}
+                type="button"
+                onClick={() => handleSelectChapter(ch.id)}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: isActive ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
+                  color: isActive ? (isLight ? '#0f172a' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
+                  border: 'none',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {ch.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Bouton d'ajout */}
@@ -1424,19 +1569,24 @@ export default function TimelineCanvas() {
           cursor: 'grab',
           touchAction: 'none'
         }}>
-          <div style={{ width: '100%', height: 'calc(100% - 60px)' }}>
+          <div style={{ width: '100%', height: 'calc(100% - 74px)' }}>
             <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
           </div>
 
-          {/* MINIMAP BASSE */}
+          {/* DOCK MINIMAP EN CAPSULE FLOTTANTE */}
           <div style={{
             position: 'absolute',
-            bottom: 0,
-            left: 0,
-            width: '100%',
-            height: 60,
-            backgroundColor: isLight ? '#f4f4f5' : '#020617',
-            borderTop: isLight ? '1px solid #e4e4e7' : '1px solid #334155',
+            bottom: 10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '92%',
+            maxWidth: 980,
+            height: 56,
+            backgroundColor: '#1e232d',
+            border: '2px solid #2b323f',
+            borderRadius: 28,
+            boxShadow: '0 12px 28px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.15)',
+            overflow: 'hidden',
             cursor: 'pointer',
             touchAction: 'none',
             zIndex: 15
