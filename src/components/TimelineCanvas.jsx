@@ -260,10 +260,18 @@ export default function TimelineCanvas() {
 
     const ctx = cMain.getContext('2d');
     const mctx = cMini.getContext('2d');
-    const w = cMain.width;
-    const h = cMain.height;
-    const mw = cMini.width;
-    const mh = cMini.height;
+
+    const dpr = window.devicePixelRatio || 1;
+
+    // Réinitialisation et application de l'échelle Retina
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Dimensions logiques en CSS
+    const w = cMain.clientWidth;
+    const h = cMain.clientHeight;
+    const mw = cMini.clientWidth;
+    const mh = cMini.clientHeight;
 
     if (w === 0 || h === 0 || mw === 0 || mh === 0) return;
 
@@ -341,7 +349,7 @@ export default function TimelineCanvas() {
 
       if (stonePatternRef.current) {
         if (ctx.setTransform && stonePatternRef.current.setTransform) {
-          const matrix = new DOMMatrix().translate(textureShiftRef.current % 600, 0);
+          const matrix = new DOMMatrix().scale(dpr, dpr).translate(textureShiftRef.current % 600, 0);
           stonePatternRef.current.setTransform(matrix);
         }
         ctx.fillStyle = stonePatternRef.current;
@@ -764,16 +772,19 @@ export default function TimelineCanvas() {
 
   const updateSizesAndDraw = () => {
     if (!canvasMainRef.current || !canvasMiniRef.current) return;
+    const dpr = window.devicePixelRatio || 1;
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
 
     const timelineH = isAtlasOpen ? totalH * 0.5 : totalH;
+    const mainH = Math.max(100, timelineH - MINI_HEIGHT);
 
-    canvasMainRef.current.width = totalW;
-    canvasMainRef.current.height = Math.max(100, timelineH - MINI_HEIGHT);
+    // Résolution physique Retina
+    canvasMainRef.current.width = Math.round(totalW * dpr);
+    canvasMainRef.current.height = Math.round(mainH * dpr);
 
-    canvasMiniRef.current.width = totalW;
-    canvasMiniRef.current.height = MINI_HEIGHT;
+    canvasMiniRef.current.width = Math.round(totalW * dpr);
+    canvasMiniRef.current.height = Math.round(MINI_HEIGHT * dpr);
 
     drawScene();
   };
@@ -850,7 +861,7 @@ export default function TimelineCanvas() {
       if (!isMainDragging) return;
       const dx = e.clientX - dragStartX;
       const span = dragStartMax - dragStartMin;
-      const shift = (dx / cMain.width) * span;
+      const shift = (dx / cMain.clientWidth) * span;
       smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift }, dx);
     };
 
@@ -859,7 +870,7 @@ export default function TimelineCanvas() {
       const factor = e.deltaY > 0 ? 1.15 : 0.85;
       const { min: vMin, max: vMax } = targetViewRef.current;
       const span = vMax - vMin;
-      const mouseYear = vMin + (e.clientX / cMain.width) * span;
+      const mouseYear = vMin + (e.clientX / cMain.clientWidth) * span;
 
       const nMin = mouseYear + (vMin - mouseYear) * factor;
       const nMax = mouseYear + (vMax - mouseYear) * factor;
@@ -884,7 +895,7 @@ export default function TimelineCanvas() {
         const { min: vMin, max: vMax } = targetViewRef.current;
         touchStartSpan = vMax - vMin;
         const midX = (x1 + x2) / 2;
-        touchStartCenterYear = vMin + (midX / cMain.width) * touchStartSpan;
+        touchStartCenterYear = vMin + (midX / cMain.clientWidth) * touchStartSpan;
       }
     };
 
@@ -893,7 +904,7 @@ export default function TimelineCanvas() {
       if (e.touches.length === 1 && isMainDragging) {
         const dx = e.touches[0].clientX - dragStartX;
         const span = dragStartMax - dragStartMin;
-        const shift = (dx / cMain.width) * span;
+        const shift = (dx / cMain.clientWidth) * span;
         smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift }, dx);
       } else if (e.touches.length === 2 && touchStartDist) {
         const x1 = e.touches[0].clientX;
@@ -904,7 +915,7 @@ export default function TimelineCanvas() {
           const scale = touchStartDist / currentDist;
           const nextSpan = Math.max(1, touchStartSpan * scale);
           const midX = (x1 + x2) / 2;
-          const ratio = midX / cMain.width;
+          const ratio = midX / cMain.clientWidth;
           smoothSetView({
             min: touchStartCenterYear - nextSpan * ratio,
             max: touchStartCenterYear + nextSpan * (1 - ratio)
@@ -959,7 +970,7 @@ export default function TimelineCanvas() {
     };
 
     const onMiniStart = (clientX) => {
-      const mw = cMini.width;
+      const mw = cMini.clientWidth;
       const { min: vMin, max: vMax } = targetViewRef.current;
       const vx1 = yearToMiniX(vMin, mw);
       const vx2 = yearToMiniX(vMax, mw);
@@ -985,7 +996,7 @@ export default function TimelineCanvas() {
     };
 
     const onMiniMove = (clientX) => {
-      const mw = cMini.width;
+      const mw = cMini.clientWidth;
       const targetYear = miniXToYear(clientX, mw);
       if (miniMode === 'move') {
         const startYear = miniXToYear(miniDragStartX, mw);
