@@ -54,7 +54,7 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Gestion du split ajustable : 0.3 (Carte dominante), 0.5 (Égalité), 0.7 (Frise dominante), 0 (Atlas masqué)
+  // Gestion du split ajustable : 0.35 (Grande frise), 0.5 (Égalité), 0.65 (Grande carte)
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
 
@@ -283,7 +283,7 @@ export default function TimelineCanvas() {
     hitboxesRef.current = [];
 
     const isMobile = w < 640;
-    const barY = h * (isMobile ? 0.68 : 0.58);
+    const barY = h * (isMobile ? 0.65 : 0.58);
 
     const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
     const trackH = Math.round((isMobile ? 16 : 18) + zoomFactor * (isMobile ? 8 : 12));
@@ -564,8 +564,8 @@ export default function TimelineCanvas() {
       }
       pinTracks[trackIndex] = x + labelW;
 
-      const baseStem = isMobile ? 24 : 36;
-      const stepStem = isMobile ? 20 : 30;
+      const baseStem = isMobile ? 22 : 36;
+      const stepStem = isMobile ? 18 : 30;
       const decalageY = baseStem + (trackIndex % 5) * stepStem;
       const yT = (barY - defaultHalfH) - decalageY;
 
@@ -648,6 +648,7 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
+    // REPÈRE VERTICAL DE L'ANNÉE DE LA CARTE (ZÉRO ÉMOJI)
     if (isAtlasOpen && atlasActiveYear !== null) {
       const atlasX = yearToX(atlasActiveYear);
 
@@ -670,36 +671,29 @@ export default function TimelineCanvas() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        const labelText = `🏛️ Carte : ${formatYear(atlasActiveYear)}`;
-        ctx.font = 'bold 10px system-ui, sans-serif';
+        const labelText = `Carte : ${formatYear(atlasActiveYear)}`;
+        ctx.font = '600 10px system-ui, sans-serif';
         const labelW = ctx.measureText(labelText).width + 16;
-        const badgeY = 14;
+        const badgeY = 8;
 
         ctx.fillStyle = '#b45309';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-        ctx.shadowBlur = 8;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+        ctx.shadowBlur = 6;
         ctx.shadowOffsetY = 2;
 
         ctx.beginPath();
         if (ctx.roundRect) {
-          ctx.roundRect(atlasX - labelW / 2, badgeY, labelW, 20, 10);
+          ctx.roundRect(atlasX - labelW / 2, badgeY, labelW, 18, 4);
         } else {
-          ctx.rect(atlasX - labelW / 2, badgeY, labelW, 20);
+          ctx.rect(atlasX - labelW / 2, badgeY, labelW, 18);
         }
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(atlasX - 4, badgeY + 20);
-        ctx.lineTo(atlasX, badgeY + 24);
-        ctx.lineTo(atlasX + 4, badgeY + 20);
-        ctx.closePath();
         ctx.fill();
 
         ctx.shadowColor = 'transparent';
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, atlasX, badgeY + 10);
+        ctx.fillText(labelText, atlasX, badgeY + 9);
 
         ctx.restore();
       }
@@ -770,15 +764,18 @@ export default function TimelineCanvas() {
     mctx.fillText("2026", mw - MINI_PAD, 56);
   };
 
+  const HEADER_H = 44;
+
   const updateSizesAndDraw = () => {
     if (!canvasMainRef.current || !canvasMiniRef.current) return;
     const dpr = window.devicePixelRatio || 1;
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
 
+    const availableAreaH = totalH - HEADER_H;
     const actualRatio = isAtlasOpen ? splitRatio : 0;
-    const atlasH = Math.round(totalH * actualRatio);
-    const timelineAreaH = totalH - atlasH;
+    const atlasH = Math.round(availableAreaH * actualRatio);
+    const timelineAreaH = availableAreaH - atlasH;
     const mainH = Math.max(80, timelineAreaH - MINI_HEIGHT);
 
     canvasMainRef.current.width = Math.round(totalW * dpr);
@@ -1224,8 +1221,7 @@ export default function TimelineCanvas() {
     }
   };
 
-  const atlasHeightPct = isAtlasOpen ? Math.round(splitRatio * 100) : 0;
-  const timelineHeightPct = 100 - atlasHeightPct;
+  const isLight = currentTheme === 'light';
 
   return (
     <div style={{
@@ -1233,194 +1229,231 @@ export default function TimelineCanvas() {
       top: 0,
       left: 0,
       width: '100vw',
-      height: '100dvh', // Hauteur dynamique pour smartphone
+      height: '100dvh',
       backgroundColor: 'transparent',
       overflow: 'hidden',
       userSelect: 'none',
       fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-      touchAction: 'none'
+      touchAction: 'none',
+      display: 'flex',
+      flexDirection: 'column'
     }}>
 
-      {/* PARTIE 1 : ATLAS HISTORIQUE */}
-      {isAtlasOpen && (
+      {/* BANDEAU D'EN-TÊTE DÉDIÉ (AU-DESSUS DE LA CARTE, PAS PAR-DESSUS) */}
+      <header style={{
+        height: HEADER_H,
+        minHeight: HEADER_H,
+        width: '100%',
+        backgroundColor: isLight ? '#fbf9f5' : '#090d16',
+        borderBottom: isLight ? '1px solid #e7ded0' : '1px solid #1e293b',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 10px 0 46px', // Dégage le bouton burger à gauche
+        boxSizing: 'border-box',
+        zIndex: 30
+      }}>
+        {/* Sélecteur de split et bascule */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            backgroundColor: isLight ? '#ede7dc' : '#1e293b',
+            padding: 2,
+            borderRadius: 6,
+            gap: 2
+          }}>
+            <button
+              type="button"
+              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.65); }}
+              style={{
+                padding: '3px 7px',
+                backgroundColor: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
+                color: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
+                border: 'none',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Carte
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.5); }}
+              style={{
+                padding: '3px 7px',
+                backgroundColor: isAtlasOpen && splitRatio === 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
+                color: isAtlasOpen && splitRatio === 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
+                border: 'none',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              50%
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.35); }}
+              style={{
+                padding: '3px 7px',
+                backgroundColor: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
+                color: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
+                border: 'none',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Frise
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsAtlasOpen(prev => !prev)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: 'transparent',
+              color: isLight ? '#78716c' : '#94a3b8',
+              border: isLight ? '1px solid #e7ded0' : '1px solid #334155',
+              borderRadius: 6,
+              fontSize: 10,
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            {isAtlasOpen ? 'Masquer' : 'Afficher'}
+          </button>
+        </div>
+
+        {/* Bouton d'ajout discret intégré dans le bandeau */}
+        <button
+          type="button"
+          onClick={handleOpenCreateModal}
+          style={{
+            padding: '5px 12px',
+            borderRadius: 6,
+            backgroundColor: '#0284c7',
+            color: '#ffffff',
+            border: 'none',
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4
+          }}
+        >
+          <span>+</span>
+          <span>Ajouter</span>
+        </button>
+      </header>
+
+      {/* ZONE CENTRALE : ATLAS + FRISE */}
+      <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
+
+        {/* 1. L'ATLAS (S'affiche sous le bandeau, sans widget parasite par-dessus) */}
+        {isAtlasOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: `${Math.round(splitRatio * 100)}%`,
+              borderBottom: '1px solid #e7ded0',
+              backgroundColor: '#0f172a',
+              zIndex: 10,
+              overflow: 'hidden',
+              transition: 'height 0.2s ease'
+            }}
+          >
+            <HistoricalAtlas
+              viewRange={viewRange}
+              events={events}
+              selectedEvent={atlasFocusedEvent || drawerEvent || selectedEvent}
+              onOpenDrawer={(evt) => handleOpenDrawer(evt)}
+              onMapYearChange={(yr) => setAtlasActiveYear(yr)}
+              mapLayers={mapLayers}
+            />
+          </div>
+        )}
+
+        {/* INDICATEUR DISCRET DE PÉRIODE SUR LA FRISE */}
         <div
           style={{
             position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: `${atlasHeightPct}%`,
-            borderBottom: '1px solid #e7ded0',
-            backgroundColor: '#0f172a',
-            zIndex: 10,
-            overflow: 'hidden',
-            transition: 'height 0.2s ease'
+            top: isAtlasOpen ? `calc(${Math.round(splitRatio * 100)}% + 8px)` : 8,
+            left: 14,
+            zIndex: 20,
+            pointerEvents: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            transition: 'top 0.2s ease'
           }}
         >
-          <HistoricalAtlas
-            viewRange={viewRange}
-            events={events}
-            selectedEvent={atlasFocusedEvent || drawerEvent || selectedEvent}
-            onOpenDrawer={(evt) => handleOpenDrawer(evt)}
-            onMapYearChange={(yr) => setAtlasActiveYear(yr)}
-            mapLayers={mapLayers}
-          />
+          <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#71717a' }}>
+            Période
+          </span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+              {formatYear(viewRange.min)}
+            </span>
+            <span style={{ fontSize: 11, color: '#a1a1aa' }}>—</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+              {formatYear(viewRange.max)}
+            </span>
+          </div>
         </div>
-      )}
 
-      {/* TIROIR DE SAVOIR */}
+        {/* 2. LE CANVAS PRINCIPAL DE LA FRISE */}
+        <div style={{
+          position: 'absolute',
+          top: isAtlasOpen ? `${Math.round(splitRatio * 100)}%` : 0,
+          left: 0,
+          width: '100%',
+          height: isAtlasOpen ? `${100 - Math.round(splitRatio * 100)}%` : '100%',
+          cursor: 'grab',
+          touchAction: 'none',
+          transition: 'top 0.2s ease, height 0.2s ease'
+        }}>
+          <div style={{ width: '100%', height: 'calc(100% - 60px)' }}>
+            <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+          </div>
+
+          {/* 3. MINIMAP BASSE */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            width: '100%',
+            height: 60,
+            backgroundColor: isLight ? '#f4f4f5' : '#020617',
+            borderTop: isLight ? '1px solid #e4e4e7' : '1px solid #334155',
+            cursor: 'pointer',
+            touchAction: 'none',
+            zIndex: 15
+          }}>
+            <canvas ref={canvasMiniRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+          </div>
+        </div>
+
+      </div>
+
+      {/* TIROIR LATÉRAL DE CONNAISSANCES */}
       <KnowledgeSplitView
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         event={drawerEvent}
       />
 
-      {/* INDICATEUR DE PÉRIODE SUR LA FRISE */}
-      <div
-        style={{
-          position: 'absolute',
-          top: isAtlasOpen ? `calc(${atlasHeightPct}% + 10px)` : 12,
-          left: 16,
-          zIndex: 20,
-          pointerEvents: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
-          transition: 'top 0.2s ease'
-        }}
-      >
-        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#71717a' }}>
-          Période
-        </span>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
-            {formatYear(viewRange.min)}
-          </span>
-          <span style={{ fontSize: 11, color: '#a1a1aa' }}>—</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
-            {formatYear(viewRange.max)}
-          </span>
-        </div>
-      </div>
-
-      {/* RÉGLETTE DISCRÈTE D'AJUSTEMENT DU SPLIT (En haut à droite de la frise) */}
-      <div style={{
-        position: 'absolute',
-        top: isAtlasOpen ? `calc(${atlasHeightPct}% + 10px)` : 12,
-        right: 16,
-        zIndex: 20,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 2,
-        padding: '3px',
-        backgroundColor: currentTheme === 'light' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(8px)',
-        border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-        borderRadius: 8,
-        transition: 'top 0.2s ease'
-      }}>
-        <button
-          type="button"
-          onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.65); }}
-          style={{
-            padding: '4px 6px',
-            backgroundColor: isAtlasOpen && splitRatio > 0.5 ? '#0284c7' : 'transparent',
-            color: isAtlasOpen && splitRatio > 0.5 ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 10,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-          title="Grande carte"
-        >
-          🗺️ Carte
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.5); }}
-          style={{
-            padding: '4px 6px',
-            backgroundColor: isAtlasOpen && splitRatio === 0.5 ? '#0284c7' : 'transparent',
-            color: isAtlasOpen && splitRatio === 0.5 ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 10,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-          title="Écran 50/50"
-        >
-          50%
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.35); }}
-          style={{
-            padding: '4px 6px',
-            backgroundColor: isAtlasOpen && splitRatio < 0.5 ? '#0284c7' : 'transparent',
-            color: isAtlasOpen && splitRatio < 0.5 ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 10,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-          title="Grande frise"
-        >
-          ⏳ Frise
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setIsAtlasOpen(prev => !prev)}
-          style={{
-            padding: '4px 6px',
-            backgroundColor: 'transparent',
-            color: currentTheme === 'light' ? '#71717a' : '#94a3b8',
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 10,
-            fontWeight: 700,
-            cursor: 'pointer'
-          }}
-          title={isAtlasOpen ? "Replier la carte" : "Ouvrir la carte"}
-        >
-          {isAtlasOpen ? '✕' : '🗺️'}
-        </button>
-      </div>
-
-      {/* BOUTON FLOTTANT DISCRET "+" POUR AJOUTER (En bas à droite, au-dessus de la minimap) */}
-      <button
-        type="button"
-        onClick={handleOpenCreateModal}
-        style={{
-          position: 'absolute',
-          bottom: 74,
-          right: 16,
-          zIndex: 25,
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          backgroundColor: '#0284c7',
-          color: '#ffffff',
-          border: 'none',
-          boxShadow: '0 4px 14px rgba(2, 132, 199, 0.4)',
-          fontSize: 22,
-          fontWeight: 400,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer'
-        }}
-        title="Ajouter un événement"
-      >
-        +
-      </button>
-
-      {/* VOLET DE FILTRES ET CONFIGURATION GAUCHE */}
+      {/* VOLET DE FILTRES LATÉRAL */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
@@ -1465,8 +1498,8 @@ export default function TimelineCanvas() {
           : selectedEvent.date_debut;
 
         const dynamicX = ((targetYear - viewRange.min) / span) * window.innerWidth;
-        const actualAtlasH = isAtlasOpen ? Math.round(window.innerHeight * splitRatio) : 0;
-        const absoluteTargetY = actualAtlasH + popupPos.y;
+        const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - HEADER_H) * splitRatio) : 0;
+        const absoluteTargetY = HEADER_H + actualAtlasH + popupPos.y;
 
         const debut = selectedEvent.date_debut;
         const fin = selectedEvent.date_fin ?? debut;
@@ -1546,38 +1579,6 @@ export default function TimelineCanvas() {
         onToggleTag={() => {}}
         availableGroups={availableGroups}
       />
-
-      {/* CANVAS DE LA FRISE PRINCIPALE */}
-      <div style={{
-        position: 'absolute',
-        top: `${atlasHeightPct}%`,
-        left: 0,
-        width: '100%',
-        height: `${timelineHeightPct}%`,
-        cursor: 'grab',
-        touchAction: 'none',
-        transition: 'top 0.2s ease, height 0.2s ease'
-      }}>
-        <div style={{ width: '100%', height: 'calc(100% - 60px)' }}>
-          <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
-        </div>
-
-        {/* MINIMAP BASSE PARFAITEMENT DANS L'ÉCRAN MOBILE */}
-        <div style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          width: '100%',
-          height: 60,
-          backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#020617',
-          borderTop: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-          cursor: 'pointer',
-          touchAction: 'none',
-          zIndex: 15
-        }}>
-          <canvas ref={canvasMiniRef} style={{ display: 'block', width: '100%', height: '100%' }} />
-        </div>
-      </div>
 
     </div>
   );

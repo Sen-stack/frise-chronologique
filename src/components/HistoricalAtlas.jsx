@@ -7,7 +7,7 @@ import WIKI_ENTITIES_MAP from '../data/wikiEntitiesMap.json';
 
 const BASE_MAPS = {
   topo: {
-    name: 'Topographie',
+    name: 'Relief',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri &mdash; National Geographic',
     maxZoom: 12
@@ -257,18 +257,6 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  const [isMobileScreen, setIsMobileScreen] = useState(() => {
-    return typeof window !== 'undefined' ? window.innerWidth < 640 : false;
-  });
-
-  useEffect(() => {
-    const handleCheckMobile = () => {
-      setIsMobileScreen(window.innerWidth < 640);
-    };
-    window.addEventListener('resize', handleCheckMobile);
-    return () => window.removeEventListener('resize', handleCheckMobile);
-  }, []);
-
   const currentCenterYear = useMemo(() => {
     if (!viewRange) return 200;
     return Math.round((viewRange.min + viewRange.max) / 2);
@@ -439,109 +427,95 @@ export default function HistoricalAtlas({
         }
       }}
     >
-      {/* BARRE D'ÉTAT DU HAUT ULTRA-COMPACTE SUR MOBILE */}
+      {/* BARRE D'ÉTAT SUPÉRIEURE ÉPURÉE SANS ÉMOJI */}
       <div
         id="atlas-status-badge"
         style={{
           position: 'absolute',
-          top: 10,
-          right: 10,
-          left: isMobileScreen ? 48 : 'auto', // Laisse de l'espace pour les boutons zoom de Leaflet
+          top: 8,
+          right: 8,
           zIndex: 1000,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: isMobileScreen ? 'space-between' : 'flex-start',
-          gap: isMobileScreen ? 4 : 6,
-          backgroundColor: 'rgba(255, 255, 255, 0.94)',
+          gap: 6,
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
           backdropFilter: 'blur(8px)',
-          padding: isMobileScreen ? '3px 6px' : '4px 8px',
-          borderRadius: 8,
+          padding: '3px 8px',
+          borderRadius: 6,
           border: '1px solid #e7ded0',
-          boxShadow: '0 3px 10px rgba(0,0,0,0.06)',
-          fontSize: isMobileScreen ? 10 : 11,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          fontSize: 10,
           fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
           whiteSpace: 'nowrap'
         }}
       >
-        {/* Sélecteur compact Relief / Neutre */}
-        <div style={{ display: 'flex', backgroundColor: '#f3ece0', padding: 2, borderRadius: 6, gap: 1 }}>
+        {/* Fonds de carte sans emoji */}
+        <div style={{ display: 'flex', backgroundColor: '#ede7dc', padding: 2, borderRadius: 4, gap: 1 }}>
           <button
             type="button"
             onClick={() => setBaseMapKey('topo')}
             style={{
               border: 'none',
-              padding: isMobileScreen ? '2px 4px' : '2px 6px',
-              borderRadius: 4,
-              fontSize: 10,
-              fontWeight: 700,
+              padding: '2px 5px',
+              borderRadius: 3,
+              fontSize: 9,
+              fontWeight: 600,
               cursor: 'pointer',
               backgroundColor: baseMapKey === 'topo' ? '#ffffff' : 'transparent',
-              color: baseMapKey === 'topo' ? '#b45309' : '#78716c',
-              boxShadow: baseMapKey === 'topo' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              color: baseMapKey === 'topo' ? '#b45309' : '#78716c'
             }}
-            title="Relief"
           >
-            ⛰️{isMobileScreen ? '' : ' Relief'}
+            Relief
           </button>
           <button
             type="button"
             onClick={() => setBaseMapKey('neutre')}
             style={{
               border: 'none',
-              padding: isMobileScreen ? '2px 4px' : '2px 6px',
-              borderRadius: 4,
-              fontSize: 10,
-              fontWeight: 700,
+              padding: '2px 5px',
+              borderRadius: 3,
+              fontSize: 9,
+              fontWeight: 600,
               cursor: 'pointer',
               backgroundColor: baseMapKey === 'neutre' ? '#ffffff' : 'transparent',
-              color: baseMapKey === 'neutre' ? '#b45309' : '#78716c',
-              boxShadow: baseMapKey === 'neutre' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              color: baseMapKey === 'neutre' ? '#b45309' : '#78716c'
             }}
-            title="Neutre"
           >
-            🗺️{isMobileScreen ? '' : ' Neutre'}
+            Neutre
           </button>
         </div>
 
-        {/* Année active */}
-        <span style={{ color: '#1c1917', fontWeight: 700, borderLeft: '1px solid #e7ded0', paddingLeft: 4 }}>
-          {isMobileScreen ? '🏛️ ' : '🏛️ Carte : '}
+        {/* Année sans emoji */}
+        <span style={{ color: '#1c1917', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
           {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
         </span>
 
-        {isLoadingBorders && (
-          <span style={{ fontSize: 9, color: '#b45309' }}>
-            ⏳
-          </span>
-        )}
-
-        {/* Nombre de jalons */}
-        <span style={{ color: '#78716c', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 4 }}>
-          📍 {activePoints.length}{isMobileScreen ? '' : ` repère${activePoints.length > 1 ? 's' : ''}`}
+        {/* Repères sans emoji */}
+        <span style={{ color: '#78716c', fontWeight: 500, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
+          {activePoints.length} repères
         </span>
 
-        {/* Statut de recalibrage / Synchronisation */}
+        {/* Statut de recalibrage / Sync */}
         {isManualOverride ? (
           <button
             type="button"
             onClick={handleRecalibrate}
             style={{
               padding: '2px 6px',
-              borderRadius: 5,
+              borderRadius: 4,
               border: 'none',
               backgroundColor: '#b45309',
               color: '#ffffff',
-              fontWeight: 700,
+              fontWeight: 600,
               fontSize: 9,
               cursor: 'pointer'
             }}
-            title="Recalibrer sur la frise"
           >
-            {isMobileScreen ? '🎯 Sync' : '🎯 Recalibrer'}
+            Recalibrer
           </button>
         ) : (
-          <span style={{ fontSize: 9, color: '#15803d', fontWeight: 700 }}>
-            ●{isMobileScreen ? '' : ' Sync'}
+          <span style={{ fontSize: 9, color: '#15803d', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
+            Sync
           </span>
         )}
       </div>
@@ -605,7 +579,7 @@ export default function HistoricalAtlas({
                     rel="noopener noreferrer"
                     style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
                   >
-                    🌐 Consulter sur Wikipédia
+                    Consulter sur Wikipédia
                   </a>
                 </div>
               `, { autoPan: true });
@@ -653,7 +627,7 @@ export default function HistoricalAtlas({
                     rel="noopener noreferrer"
                     style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
                   >
-                    🌐 Consulter sur Wikipédia
+                    Consulter sur Wikipédia
                   </a>
                 </div>
               `, { autoPan: true });
@@ -676,12 +650,12 @@ export default function HistoricalAtlas({
               const routeType = feature?.properties?.routeType || 'Voie de communication';
               const desc = feature?.properties?.description || '';
 
-              layer.bindTooltip(`<strong>🐫 ${routeName}</strong>`, { sticky: true });
+              layer.bindTooltip(`<strong>${routeName}</strong>`, { sticky: true });
 
               layer.bindPopup(`
                 <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:210px;">
                   <div style="font-size:10px; font-weight:700; color:#c2410c; text-transform:uppercase; margin-bottom:2px;">
-                    🐫 ${routeType}
+                    ${routeType}
                   </div>
                   <div style="font-size:13px; font-weight:700; color:#1c1917; margin-bottom:4px;">
                     ${routeName}
@@ -693,7 +667,7 @@ export default function HistoricalAtlas({
                     rel="noopener noreferrer"
                     style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
                   >
-                    🌐 Article Wikipédia
+                    Article Wikipédia
                   </a>
                 </div>
               `, { autoPan: true });
@@ -737,7 +711,7 @@ export default function HistoricalAtlas({
                         cursor: 'pointer'
                       }}
                     >
-                      🔍 Approfondir
+                      Approfondir
                     </button>
                     <a
                       href={getWikiUrl(pt.nom || pt.event.titre)}
@@ -758,7 +732,7 @@ export default function HistoricalAtlas({
                         boxSizing: 'border-box'
                       }}
                     >
-                      🌐 Wikipédia
+                      Wikipédia
                     </a>
                   </div>
                 </div>
