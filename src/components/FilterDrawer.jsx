@@ -24,6 +24,7 @@ export default function FilterDrawer({
   searchQuery = '',
   setSearchQuery,
   currentTheme = 'light',
+  setCurrentTheme,
   mapLayers = {
     worldEmpires: true,
     subDivisions: true,
@@ -104,16 +105,42 @@ export default function FilterDrawer({
         {isOpen ? '◀' : '▶'}
       </button>
 
-      {/* En-tête */}
+      {/* En-tête avec titre et bouton Thème Jour / Nuit */}
       <div
         style={{
-          padding: '24px 20px 16px 20px',
-          borderBottom: isLight ? '1px solid rgba(180, 150, 120, 0.2)' : '1px solid #1e293b'
+          padding: '20px 16px 14px 16px',
+          borderBottom: isLight ? '1px solid rgba(180, 150, 120, 0.2)' : '1px solid #1e293b',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isLight ? '#2b2118' : '#ffffff' }}>
+        <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isLight ? '#2b2118' : '#ffffff' }}>
           CHRONOS
         </div>
+
+        {/* Bouton de bascule Jour / Nuit discret */}
+        <button
+          type="button"
+          onClick={() => setCurrentTheme && setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
+          style={{
+            padding: '5px 10px',
+            backgroundColor: isLight ? 'rgba(235, 227, 215, 0.7)' : '#1e293b',
+            color: isLight ? '#78350f' : '#38bdf8',
+            border: isLight ? '1px solid rgba(180, 150, 120, 0.35)' : '1px solid #334155',
+            borderRadius: 8,
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4
+          }}
+          title="Basculer le thème"
+        >
+          <span>{isLight ? '🌙' : '☀️'}</span>
+          <span>{isLight ? 'Nuit' : 'Jour'}</span>
+        </button>
       </div>
 
       {/* Corps du menu */}
@@ -608,9 +635,11 @@ export default function FilterDrawer({
                   </div>
                 </div>
               )}
+
             </div>
           )}
         </div>
+
       </div>
     </div>
   );

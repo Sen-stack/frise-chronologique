@@ -10,7 +10,6 @@ import {
   MINI_PAD,
   HANDLE_WIDTH,
   MINI_HEIGHT,
-  BAR_HEIGHT,
   formatYear,
   getTickInterval,
   getAutoPeriod,
@@ -55,7 +54,10 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Gestion du split ajustable : 0.3 (Carte dominante), 0.5 (Égalité), 0.7 (Frise dominante), 0 (Atlas masqué)
+  const [splitRatio, setSplitRatio] = useState(0.5);
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
+
   const [mapLayers, setMapLayers] = useState({
     worldEmpires: true,
     subDivisions: true,
@@ -263,11 +265,9 @@ export default function TimelineCanvas() {
 
     const dpr = window.devicePixelRatio || 1;
 
-    // Réinitialisation et application de l'échelle Retina
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Dimensions logiques en CSS
     const w = cMain.clientWidth;
     const h = cMain.clientHeight;
     const mw = cMini.clientWidth;
@@ -283,7 +283,7 @@ export default function TimelineCanvas() {
     hitboxesRef.current = [];
 
     const isMobile = w < 640;
-    const barY = h * (isMobile ? 0.70 : 0.58);
+    const barY = h * (isMobile ? 0.68 : 0.58);
 
     const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
     const trackH = Math.round((isMobile ? 16 : 18) + zoomFactor * (isMobile ? 8 : 12));
@@ -564,8 +564,8 @@ export default function TimelineCanvas() {
       }
       pinTracks[trackIndex] = x + labelW;
 
-      const baseStem = isMobile ? 26 : 36;
-      const stepStem = isMobile ? 22 : 30;
+      const baseStem = isMobile ? 24 : 36;
+      const stepStem = isMobile ? 20 : 30;
       const decalageY = baseStem + (trackIndex % 5) * stepStem;
       const yT = (barY - defaultHalfH) - decalageY;
 
@@ -714,15 +714,15 @@ export default function TimelineCanvas() {
     PERIOD_SEGMENTS.forEach(seg => {
       const segWidth = seg.ratio * usableW;
       mctx.fillStyle = seg.color;
-      mctx.fillRect(currentX, 6, segWidth, 28);
+      mctx.fillRect(currentX, 6, segWidth, 26);
       mctx.strokeStyle = '#0f172a';
       mctx.lineWidth = 1;
-      mctx.strokeRect(currentX, 6, segWidth, 28);
+      mctx.strokeRect(currentX, 6, segWidth, 26);
 
       mctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       mctx.font = isMobile ? '8px sans-serif' : '10px sans-serif';
       mctx.textAlign = 'center';
-      mctx.fillText(isMobile ? seg.nom.slice(0, 4) : seg.nom, currentX + segWidth / 2, 23);
+      mctx.fillText(isMobile ? seg.nom.slice(0, 4) : seg.nom, currentX + segWidth / 2, 22);
       currentX += segWidth;
     });
 
@@ -733,17 +733,17 @@ export default function TimelineCanvas() {
         const mx2 = yearToMiniX(evt.date_fin, mw);
         const mW = Math.max(2, Math.abs(mx2 - mx));
         mctx.fillStyle = style.fill;
-        mctx.fillRect(Math.min(mx, mx2), 36, mW, 6);
+        mctx.fillRect(Math.min(mx, mx2), 34, mW, 6);
       } else {
         mctx.fillStyle = style.stroke;
-        mctx.fillRect(mx - 1, 36, 2, 6);
+        mctx.fillRect(mx - 1, 34, 2, 6);
       }
     });
 
     if (isAtlasOpen && atlasActiveYear !== null) {
       const atlasMiniX = yearToMiniX(atlasActiveYear, mw);
       mctx.fillStyle = '#b45309';
-      mctx.fillRect(atlasMiniX - 1, 4, 2, 42);
+      mctx.fillRect(atlasMiniX - 1, 4, 2, 40);
     }
 
     const vx1 = yearToMiniX(vMin, mw);
@@ -753,21 +753,21 @@ export default function TimelineCanvas() {
     const bWidth = Math.max(10, right - left);
 
     mctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
-    mctx.fillRect(left, 4, bWidth, 42);
+    mctx.fillRect(left, 4, bWidth, 40);
     mctx.strokeStyle = th.viewportBorder;
     mctx.lineWidth = 2;
-    mctx.strokeRect(left, 4, bWidth, 42);
+    mctx.strokeRect(left, 4, bWidth, 40);
 
     mctx.fillStyle = '#ffffff';
-    mctx.fillRect(left, 6, 4, 38);
-    mctx.fillRect(left + bWidth - 4, 6, 4, 38);
+    mctx.fillRect(left, 6, 4, 36);
+    mctx.fillRect(left + bWidth - 4, 6, 4, 36);
 
     mctx.fillStyle = '#94a3b8';
     mctx.font = '9px monospace, sans-serif';
     mctx.textAlign = 'left';
-    mctx.fillText("-4.5 Ga", MINI_PAD, 60);
+    mctx.fillText("-4.5 Ga", MINI_PAD, 56);
     mctx.textAlign = 'right';
-    mctx.fillText("2026", mw - MINI_PAD, 60);
+    mctx.fillText("2026", mw - MINI_PAD, 56);
   };
 
   const updateSizesAndDraw = () => {
@@ -776,10 +776,11 @@ export default function TimelineCanvas() {
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
 
-    const timelineH = isAtlasOpen ? totalH * 0.5 : totalH;
-    const mainH = Math.max(100, timelineH - MINI_HEIGHT);
+    const actualRatio = isAtlasOpen ? splitRatio : 0;
+    const atlasH = Math.round(totalH * actualRatio);
+    const timelineAreaH = totalH - atlasH;
+    const mainH = Math.max(80, timelineAreaH - MINI_HEIGHT);
 
-    // Résolution physique Retina
     canvasMainRef.current.width = Math.round(totalW * dpr);
     canvasMainRef.current.height = Math.round(mainH * dpr);
 
@@ -825,11 +826,11 @@ export default function TimelineCanvas() {
     window.addEventListener('resize', updateSizesAndDraw);
     updateSizesAndDraw();
     return () => window.removeEventListener('resize', updateSizesAndDraw);
-  }, [isAtlasOpen]);
+  }, [isAtlasOpen, splitRatio]);
 
   useEffect(() => {
     drawScene();
-  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, atlasActiveYear, currentTheme]);
+  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, splitRatio, atlasActiveYear, currentTheme]);
 
   useEffect(() => {
     const cMain = canvasMainRef.current;
@@ -958,12 +959,8 @@ export default function TimelineCanvas() {
         const targetY = hit.y;
         setPopupPos({ x: targetX, y: targetY });
 
-        if (isDrawerOpen) {
-          setDrawerEvent(hit.evt);
-        }
-        if (isEditDrawerOpen) {
-          setEditingTargetEvent(hit.evt);
-        }
+        if (isDrawerOpen) setDrawerEvent(hit.evt);
+        if (isEditDrawerOpen) setEditingTargetEvent(hit.evt);
       } else {
         setSelectedEvent(null);
       }
@@ -1227,11 +1224,24 @@ export default function TimelineCanvas() {
     }
   };
 
-  const activeHeaderEvent = drawerEvent || selectedEvent;
+  const atlasHeightPct = isAtlasOpen ? Math.round(splitRatio * 100) : 0;
+  const timelineHeightPct = 100 - atlasHeightPct;
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'transparent', overflow: 'hidden', userSelect: 'none', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", touchAction: 'none' }}>
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100dvh', // Hauteur dynamique pour smartphone
+      backgroundColor: 'transparent',
+      overflow: 'hidden',
+      userSelect: 'none',
+      fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+      touchAction: 'none'
+    }}>
 
+      {/* PARTIE 1 : ATLAS HISTORIQUE */}
       {isAtlasOpen && (
         <div
           style={{
@@ -1239,11 +1249,12 @@ export default function TimelineCanvas() {
             top: 0,
             left: 0,
             width: '100vw',
-            height: '50vh',
+            height: `${atlasHeightPct}%`,
             borderBottom: '1px solid #e7ded0',
             backgroundColor: '#0f172a',
             zIndex: 10,
-            overflow: 'hidden'
+            overflow: 'hidden',
+            transition: 'height 0.2s ease'
           }}
         >
           <HistoricalAtlas
@@ -1257,163 +1268,159 @@ export default function TimelineCanvas() {
         </div>
       )}
 
+      {/* TIROIR DE SAVOIR */}
       <KnowledgeSplitView
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         event={drawerEvent}
       />
 
+      {/* INDICATEUR DE PÉRIODE SUR LA FRISE */}
       <div
         style={{
           position: 'absolute',
-          top: isAtlasOpen ? 'calc(50vh + 14px)' : 16,
-          left: 48,
+          top: isAtlasOpen ? `calc(${atlasHeightPct}% + 10px)` : 12,
+          left: 16,
           zIndex: 20,
           pointerEvents: 'none',
           display: 'flex',
           flexDirection: 'column',
           gap: 1,
-          transition: 'top 0.25s ease'
+          transition: 'top 0.2s ease'
         }}
       >
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '1px',
-            color: '#71717a'
-          }}
-        >
+        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#71717a' }}>
           Période
         </span>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
             {formatYear(viewRange.min)}
           </span>
-          <span style={{ fontSize: 12, color: '#a1a1aa' }}>—</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 11, color: '#a1a1aa' }}>—</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: currentTheme === 'light' ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
             {formatYear(viewRange.max)}
           </span>
         </div>
       </div>
 
+      {/* RÉGLETTE DISCRÈTE D'AJUSTEMENT DU SPLIT (En haut à droite de la frise) */}
       <div style={{
         position: 'absolute',
-        top: isAtlasOpen ? 'calc(50% + 12px)' : 14,
-        left: '50%',
-        transform: 'translateX(-50%)',
+        top: isAtlasOpen ? `calc(${atlasHeightPct}% + 10px)` : 12,
+        right: 16,
         zIndex: 20,
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '5px 8px',
-        backgroundColor: currentTheme === 'light' ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(12px)',
+        gap: 2,
+        padding: '3px',
+        backgroundColor: currentTheme === 'light' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(8px)',
         border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-        borderRadius: 14,
-        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.06)',
-        color: currentTheme === 'light' ? '#18181b' : '#f8fafc',
-        transition: 'top 0.25s ease'
+        borderRadius: 8,
+        transition: 'top 0.2s ease'
       }}>
+        <button
+          type="button"
+          onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.65); }}
+          style={{
+            padding: '4px 6px',
+            backgroundColor: isAtlasOpen && splitRatio > 0.5 ? '#0284c7' : 'transparent',
+            color: isAtlasOpen && splitRatio > 0.5 ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 10,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          title="Grande carte"
+        >
+          🗺️ Carte
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.5); }}
+          style={{
+            padding: '4px 6px',
+            backgroundColor: isAtlasOpen && splitRatio === 0.5 ? '#0284c7' : 'transparent',
+            color: isAtlasOpen && splitRatio === 0.5 ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 10,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          title="Écran 50/50"
+        >
+          50%
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.35); }}
+          style={{
+            padding: '4px 6px',
+            backgroundColor: isAtlasOpen && splitRatio < 0.5 ? '#0284c7' : 'transparent',
+            color: isAtlasOpen && splitRatio < 0.5 ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 10,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          title="Grande frise"
+        >
+          ⏳ Frise
+        </button>
+
         <button
           type="button"
           onClick={() => setIsAtlasOpen(prev => !prev)}
           style={{
-            padding: '6px 10px',
-            backgroundColor: isAtlasOpen ? '#0284c7' : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
-            color: isAtlasOpen ? '#ffffff' : (currentTheme === 'light' ? '#52525b' : '#94a3b8'),
-            border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-            borderRadius: 8,
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-          title={isAtlasOpen ? "Replier la carte" : "Déployer la carte"}
-        >
-          {isAtlasOpen ? '🗺️ Atlas (50%)' : '🗺️ Ouvrir Atlas'}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
-          style={{
-            padding: '6px 10px',
-            backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#1e293b',
-            color: currentTheme === 'light' ? '#52525b' : '#94a3b8',
-            border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-            borderRadius: 8,
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-        >
-          {currentTheme === 'light' ? 'Nuit' : 'Jour'}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleOpenCreateModal}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '6px 12px',
-            backgroundColor: '#0284c7',
-            color: '#ffffff',
+            padding: '4px 6px',
+            backgroundColor: 'transparent',
+            color: currentTheme === 'light' ? '#71717a' : '#94a3b8',
             border: 'none',
-            borderRadius: 8,
-            fontSize: 11,
+            borderRadius: 6,
+            fontSize: 10,
             fontWeight: 700,
             cursor: 'pointer'
           }}
+          title={isAtlasOpen ? "Replier la carte" : "Ouvrir la carte"}
         >
-          <span>+</span>
-          <span>Ajouter</span>
+          {isAtlasOpen ? '✕' : '🗺️'}
         </button>
-
-        {activeHeaderEvent && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 4, borderLeft: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155' }}>
-            <button
-              type="button"
-              onClick={() => {
-                if (isDrawerOpen) handleCloseDrawer();
-                else handleOpenDrawer(selectedEvent);
-              }}
-              style={{
-                padding: '6px 10px',
-                backgroundColor: isDrawerOpen ? '#0284c7' : (currentTheme === 'light' ? '#f4f4f5' : '#1e293b'),
-                color: isDrawerOpen ? '#ffffff' : '#0284c7',
-                border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-                borderRadius: 8,
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              {isDrawerOpen ? '✕ Volet' : 'Détails'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleOpenEditDrawer(activeHeaderEvent)}
-              style={{
-                padding: '6px 8px',
-                backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#1e293b',
-                color: '#d97706',
-                border: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-                borderRadius: 8,
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              Éditer
-            </button>
-          </div>
-        )}
       </div>
 
+      {/* BOUTON FLOTTANT DISCRET "+" POUR AJOUTER (En bas à droite, au-dessus de la minimap) */}
+      <button
+        type="button"
+        onClick={handleOpenCreateModal}
+        style={{
+          position: 'absolute',
+          bottom: 74,
+          right: 16,
+          zIndex: 25,
+          width: 40,
+          height: 40,
+          borderRadius: '50%',
+          backgroundColor: '#0284c7',
+          color: '#ffffff',
+          border: 'none',
+          boxShadow: '0 4px 14px rgba(2, 132, 199, 0.4)',
+          fontSize: 22,
+          fontWeight: 400,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer'
+        }}
+        title="Ajouter un événement"
+      >
+        +
+      </button>
+
+      {/* VOLET DE FILTRES ET CONFIGURATION GAUCHE */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
@@ -1442,10 +1449,12 @@ export default function TimelineCanvas() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentTheme={currentTheme}
+        setCurrentTheme={setCurrentTheme}
         mapLayers={mapLayers}
         onToggleMapLayer={handleToggleMapLayer}
       />
 
+      {/* POP-UP CONTEXTUELLE AU CLIC */}
       {selectedEvent && (() => {
         const span = viewRange.max - viewRange.min;
         if (span <= 0) return null;
@@ -1456,8 +1465,8 @@ export default function TimelineCanvas() {
           : selectedEvent.date_debut;
 
         const dynamicX = ((targetYear - viewRange.min) / span) * window.innerWidth;
-        const atlasOffsetY = isAtlasOpen ? (window.innerHeight * 0.5) : 0;
-        const absoluteTargetY = atlasOffsetY + popupPos.y;
+        const actualAtlasH = isAtlasOpen ? Math.round(window.innerHeight * splitRatio) : 0;
+        const absoluteTargetY = actualAtlasH + popupPos.y;
 
         const debut = selectedEvent.date_debut;
         const fin = selectedEvent.date_fin ?? debut;
@@ -1538,32 +1547,36 @@ export default function TimelineCanvas() {
         availableGroups={availableGroups}
       />
 
+      {/* CANVAS DE LA FRISE PRINCIPALE */}
       <div style={{
         position: 'absolute',
-        bottom: 70,
+        top: `${atlasHeightPct}%`,
         left: 0,
         width: '100%',
-        height: isAtlasOpen ? 'calc(50% - 70px)' : 'calc(100% - 70px)',
+        height: `${timelineHeightPct}%`,
         cursor: 'grab',
         touchAction: 'none',
-        transition: 'height 0.25s ease'
+        transition: 'top 0.2s ease, height 0.2s ease'
       }}>
-        <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
-      </div>
+        <div style={{ width: '100%', height: 'calc(100% - 60px)' }}>
+          <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+        </div>
 
-      <div style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: '100%',
-        height: 70,
-        backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#020617',
-        borderTop: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
-        cursor: 'pointer',
-        touchAction: 'none',
-        zIndex: 15
-      }}>
-        <canvas ref={canvasMiniRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+        {/* MINIMAP BASSE PARFAITEMENT DANS L'ÉCRAN MOBILE */}
+        <div style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          width: '100%',
+          height: 60,
+          backgroundColor: currentTheme === 'light' ? '#f4f4f5' : '#020617',
+          borderTop: currentTheme === 'light' ? '1px solid #e4e4e7' : '1px solid #334155',
+          cursor: 'pointer',
+          touchAction: 'none',
+          zIndex: 15
+        }}>
+          <canvas ref={canvasMiniRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+        </div>
       </div>
 
     </div>

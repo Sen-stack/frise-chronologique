@@ -257,6 +257,18 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
+  const [isMobileScreen, setIsMobileScreen] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 640 : false;
+  });
+
+  useEffect(() => {
+    const handleCheckMobile = () => {
+      setIsMobileScreen(window.innerWidth < 640);
+    };
+    window.addEventListener('resize', handleCheckMobile);
+    return () => window.removeEventListener('resize', handleCheckMobile);
+  }, []);
+
   const currentCenterYear = useMemo(() => {
     if (!viewRange) return 200;
     return Math.round((viewRange.min + viewRange.max) / 2);
@@ -427,33 +439,38 @@ export default function HistoricalAtlas({
         }
       }}
     >
+      {/* BARRE D'ÉTAT DU HAUT ULTRA-COMPACTE SUR MOBILE */}
       <div
         id="atlas-status-badge"
         style={{
           position: 'absolute',
-          top: 12,
-          right: 14,
+          top: 10,
+          right: 10,
+          left: isMobileScreen ? 48 : 'auto', // Laisse de l'espace pour les boutons zoom de Leaflet
           zIndex: 1000,
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          justifyContent: isMobileScreen ? 'space-between' : 'flex-start',
+          gap: isMobileScreen ? 4 : 6,
           backgroundColor: 'rgba(255, 255, 255, 0.94)',
           backdropFilter: 'blur(8px)',
-          padding: '4px 10px',
+          padding: isMobileScreen ? '3px 6px' : '4px 8px',
           borderRadius: 8,
           border: '1px solid #e7ded0',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-          fontSize: 11,
-          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
+          boxShadow: '0 3px 10px rgba(0,0,0,0.06)',
+          fontSize: isMobileScreen ? 10 : 11,
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+          whiteSpace: 'nowrap'
         }}
       >
-        <div style={{ display: 'flex', backgroundColor: '#f3ece0', padding: 2, borderRadius: 6, gap: 2 }}>
+        {/* Sélecteur compact Relief / Neutre */}
+        <div style={{ display: 'flex', backgroundColor: '#f3ece0', padding: 2, borderRadius: 6, gap: 1 }}>
           <button
             type="button"
             onClick={() => setBaseMapKey('topo')}
             style={{
               border: 'none',
-              padding: '2px 7px',
+              padding: isMobileScreen ? '2px 4px' : '2px 6px',
               borderRadius: 4,
               fontSize: 10,
               fontWeight: 700,
@@ -462,15 +479,16 @@ export default function HistoricalAtlas({
               color: baseMapKey === 'topo' ? '#b45309' : '#78716c',
               boxShadow: baseMapKey === 'topo' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
             }}
+            title="Relief"
           >
-            ⛰️ Relief
+            ⛰️{isMobileScreen ? '' : ' Relief'}
           </button>
           <button
             type="button"
             onClick={() => setBaseMapKey('neutre')}
             style={{
               border: 'none',
-              padding: '2px 7px',
+              padding: isMobileScreen ? '2px 4px' : '2px 6px',
               borderRadius: 4,
               fontSize: 10,
               fontWeight: 700,
@@ -479,45 +497,51 @@ export default function HistoricalAtlas({
               color: baseMapKey === 'neutre' ? '#b45309' : '#78716c',
               boxShadow: baseMapKey === 'neutre' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
             }}
+            title="Neutre"
           >
-            🗺️ Neutre
+            🗺️{isMobileScreen ? '' : ' Neutre'}
           </button>
         </div>
 
-        <span style={{ color: '#1c1917', fontWeight: 700, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          🏛️ Carte : {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
+        {/* Année active */}
+        <span style={{ color: '#1c1917', fontWeight: 700, borderLeft: '1px solid #e7ded0', paddingLeft: 4 }}>
+          {isMobileScreen ? '🏛️ ' : '🏛️ Carte : '}
+          {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
         </span>
 
         {isLoadingBorders && (
-          <span style={{ fontSize: 10, color: '#b45309' }}>
-            chargement...
+          <span style={{ fontSize: 9, color: '#b45309' }}>
+            ⏳
           </span>
         )}
 
-        <span style={{ color: '#78716c', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          📍 {activePoints.length} repère{activePoints.length > 1 ? 's' : ''}
+        {/* Nombre de jalons */}
+        <span style={{ color: '#78716c', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 4 }}>
+          📍 {activePoints.length}{isMobileScreen ? '' : ` repère${activePoints.length > 1 ? 's' : ''}`}
         </span>
 
+        {/* Statut de recalibrage / Synchronisation */}
         {isManualOverride ? (
           <button
             type="button"
             onClick={handleRecalibrate}
             style={{
-              padding: '3px 8px',
+              padding: '2px 6px',
               borderRadius: 5,
               border: 'none',
               backgroundColor: '#b45309',
               color: '#ffffff',
               fontWeight: 700,
-              fontSize: 10,
+              fontSize: 9,
               cursor: 'pointer'
             }}
+            title="Recalibrer sur la frise"
           >
-            🎯 Recalibrer sur la frise
+            {isMobileScreen ? '🎯 Sync' : '🎯 Recalibrer'}
           </button>
         ) : (
-          <span style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>
-            ● Sync auto
+          <span style={{ fontSize: 9, color: '#15803d', fontWeight: 700 }}>
+            ●{isMobileScreen ? '' : ' Sync'}
           </span>
         )}
       </div>
