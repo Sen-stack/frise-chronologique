@@ -113,6 +113,9 @@ const HISTORICAL_YEAR_SLICES = [
   1600, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914, 1920, 1938, 1945, 1994
 ];
 
+// Tranches géologiques PALEOMAP (en Millions d'années Ma)
+const GEOLOGY_MA_SLICES = [400, 300, 250, 200, 150, 100, 66, 20];
+
 function getClosestHistoricalFile(year) {
   let closest = HISTORICAL_YEAR_SLICES[0];
   let minDiff = Math.abs(year - closest);
@@ -130,6 +133,20 @@ function getClosestHistoricalFile(year) {
     : `world_${closest}.geojson`;
 
   return { year: closest, filename };
+}
+
+function getClosestGeologySliceMa(year) {
+  const currentMa = Math.abs(year) / 1000000;
+  let closest = GEOLOGY_MA_SLICES[0];
+  let minDiff = Math.abs(currentMa - closest);
+  for (const s of GEOLOGY_MA_SLICES) {
+    const diff = Math.abs(currentMa - s);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = s;
+    }
+  }
+  return closest;
 }
 
 const PALETTE = [
@@ -257,19 +274,54 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
+  // Détection de l'année observée : on prend la borne la plus récente visible si on navigue vers l'avant
   const currentCenterYear = useMemo(() => {
     if (!viewRange) return 200;
+    // Si la fenêtre est très large (géologique), le bord droit (max) reflète l'avancée vers le présent
+    if (viewRange.max < -10000 && viewRange.max - viewRange.min > 100000000) {
+      return Math.round(viewRange.max);
+    }
     return Math.round((viewRange.min + viewRange.max) / 2);
   }, [viewRange]);
 
-  // Seuil au-delà duquel aucune frontière étatique n'est requêtée (-5000 av. J.-C.)
-  const hasTerritoryData = currentCenterYear >= -5000;
+  const isGeologyMode = currentCenterYear < -10000;
 
   useEffect(() => {
-    if (!hasTerritoryData) {
-      setWorldGeoJson(null);
-      setActiveMapSlice(null);
-      setIsLoadingBorders(false);
+    if (isGeologyMode) {
+      const targetMa = getClosestGeologySliceMa(currentCenterYear);
+      const targetYearEquivalent = -targetMa * 1000000;
+      const cacheKey = `geo_ma_${targetMa}`;
+
+      if (activeMapSlice === targetYearEquivalent && worldGeoJson) {
+        if (onMapYearChange) onMapYearChange(targetYearEquivalent);
+        return;
+      }
+
+      if (cacheRef.current[cacheKey]) {
+        setWorldGeoJson(cacheRef.current[cacheKey]);
+        setActiveMapSlice(targetYearEquivalent);
+        if (onMapYearChange) onMapYearChange(targetYearEquivalent);
+        return;
+      }
+
+      setIsLoadingBorders(true);
+      fetch(`https://gws.gplates.org/reconstruct/coastlines/?time=${targetMa}&model=PALEOMAP`)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          cacheRef.current[cacheKey] = data;
+          setWorldGeoJson(data);
+          setActiveMapSlice(targetYearEquivalent);
+          if (onMapYearChange) onMapYearChange(targetYearEquivalent);
+          setIsLoadingBorders(false);
+        })
+        .catch(err => {
+          console.error("Erreur GPlates:", err);
+          setIsLoadingBorders(false);
+        });
+
       return;
     }
 
@@ -316,10 +368,10 @@ export default function HistoricalAtlas({
             setIsLoadingBorders(false);
           });
       });
-  }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange, hasTerritoryData]);
+  }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange, isGeologyMode]);
 
   useEffect(() => {
-    if (!mapLayers.subDivisions || !hasTerritoryData) {
+    if (!mapLayers.subDivisions || isGeologyMode) {
       setSubDivisionsGeoJson(null);
       return;
     }
@@ -358,7 +410,7 @@ export default function HistoricalAtlas({
     } else {
       setSubDivisionsGeoJson(null);
     }
-  }, [currentCenterYear, mapLayers.subDivisions, hasTerritoryData]);
+  }, [currentCenterYear, mapLayers.subDivisions, isGeologyMode]);
 
   const activeEvents = useMemo(() => {
     if (!viewRange) return [];
@@ -440,7 +492,7 @@ export default function HistoricalAtlas({
         }
       }}
     >
-      {/* BARRE D'ÉTAT SUPÉRIEURE ÉPURÉE SANS ÉMOJI */}
+      {/* BARRE D'ÉTAT SUPÉRIEURE ÉPURÉE */}
       <div
         id="atlas-status-badge"
         style={{
@@ -462,7 +514,6 @@ export default function HistoricalAtlas({
           whiteSpace: 'nowrap'
         }}
       >
-        {/* Fonds de carte sans emoji */}
         <div style={{ display: 'flex', backgroundColor: '#ede7dc', padding: 2, borderRadius: 4, gap: 1 }}>
           <button
             type="button"
@@ -498,20 +549,21 @@ export default function HistoricalAtlas({
           </button>
         </div>
 
-        {/* Année ou libellé de période */}
         <span style={{ color: '#1c1917', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          {hasTerritoryData 
-            ? (activeMapSlice !== null ? formatYear(activeMapSlice) : '...')
-            : (currentCenterYear < -300000 ? 'Temps géologique' : 'Préhistoire')
-          }
+          {isGeologyMode ? 'Continents : ' : ''}
+          {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
         </span>
 
-        {/* Repères sans emoji */}
+        {isLoadingBorders && (
+          <span style={{ fontSize: 9, color: '#b45309', borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
+            chargement...
+          </span>
+        )}
+
         <span style={{ color: '#78716c', fontWeight: 500, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
           {activePoints.length} repères
         </span>
 
-        {/* Statut de recalibrage / Sync */}
         {isManualOverride ? (
           <button
             type="button"
@@ -554,22 +606,35 @@ export default function HistoricalAtlas({
           maxZoom={currentBaseMap.maxZoom}
         />
 
-        {hasTerritoryData && mapLayers.worldEmpires && worldGeoJson && (
+        {mapLayers.worldEmpires && worldGeoJson && (
           <GeoJSON
             key={`world-layer-${activeMapSlice}`}
             data={worldGeoJson}
-            style={(feature) => {
-              const name = extractFeatureName(feature?.properties);
-              const color = getEntityColor(name);
+            style={() => {
+              if (isGeologyMode) {
+                return {
+                  color: '#15803d',
+                  weight: 1.5,
+                  opacity: 0.85,
+                  fillColor: '#16a34a',
+                  fillOpacity: 0.35
+                };
+              }
               return {
-                color: color,
+                color: '#b45309',
                 weight: 1.2,
                 opacity: 0.7,
-                fillColor: color,
+                fillColor: '#b45309',
                 fillOpacity: 0.18
               };
             }}
             onEachFeature={(feature, layer) => {
+              if (isGeologyMode) {
+                const label = `Masse continentale (${formatYear(activeMapSlice)})`;
+                layer.bindTooltip(`<strong>${label}</strong>`, { sticky: true });
+                return;
+              }
+
               const detectedName = extractFeatureName(feature?.properties);
               const meta = findEntityMeta(detectedName);
               const frenchLabel = meta?.fr ? meta.fr.replace(/_/g, ' ') : null;
@@ -580,30 +645,11 @@ export default function HistoricalAtlas({
               layer.bindTooltip(`<strong>${displayName}</strong> (${formatYear(activeMapSlice)})`, {
                 sticky: true
               });
-
-              layer.bindPopup(`
-                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:180px;">
-                  <div style="font-size:10px; font-weight:700; color:#b45309; text-transform:uppercase; margin-bottom:2px;">
-                    Empire / Royaume (${formatYear(activeMapSlice)})
-                  </div>
-                  <div style="font-size:14px; font-weight:700; color:#1c1917; margin-bottom:8px;">
-                    ${displayName}
-                  </div>
-                  <a 
-                    href="${getWikiUrl(detectedName)}" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
-                  >
-                    Consulter sur Wikipédia
-                  </a>
-                </div>
-              `, { autoPan: true });
             }}
           />
         )}
 
-        {hasTerritoryData && mapLayers.subDivisions && subDivisionsGeoJson && (
+        {mapLayers.subDivisions && subDivisionsGeoJson && (
           <GeoJSON
             key={`subdivisions-layer-${currentCenterYear}`}
             data={subDivisionsGeoJson}
@@ -619,39 +665,10 @@ export default function HistoricalAtlas({
                 fillOpacity: 0.32
               };
             }}
-            onEachFeature={(feature, layer) => {
-              const rawName = extractFeatureName(feature?.properties) || 'Province';
-              const meta = findEntityMeta(rawName);
-              const frenchLabel = meta?.fr ? meta.fr.replace(/_/g, ' ') : null;
-              const displayName = frenchLabel ? `${rawName} (${frenchLabel})` : rawName;
-
-              layer.bindTooltip(`<strong>${displayName}</strong><br/><span style="font-size:10px; color:#57534e;">Province romaine</span>`, {
-                sticky: true
-              });
-
-              layer.bindPopup(`
-                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:180px;">
-                  <div style="font-size:10px; font-weight:700; color:#0284c7; text-transform:uppercase; margin-bottom:2px;">
-                    Province romaine
-                  </div>
-                  <div style="font-size:14px; font-weight:700; color:#1c1917; margin-bottom:8px;">
-                    ${displayName}
-                  </div>
-                  <a 
-                    href="${getWikiUrl(rawName)}" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
-                  >
-                    Consulter sur Wikipédia
-                  </a>
-                </div>
-              `, { autoPan: true });
-            }}
           />
         )}
 
-        {hasTerritoryData && mapLayers.tradeRoutes && (
+        {mapLayers.tradeRoutes && (
           <GeoJSON
             key="silk-road-layer"
             data={SILK_ROAD_GEOJSON}
@@ -661,33 +678,6 @@ export default function HistoricalAtlas({
               dashArray: '7, 7',
               opacity: 0.95
             })}
-            onEachFeature={(feature, layer) => {
-              const routeName = feature?.properties?.name || 'Route de la Soie';
-              const routeType = feature?.properties?.routeType || 'Voie de communication';
-              const desc = feature?.properties?.description || '';
-
-              layer.bindTooltip(`<strong>${routeName}</strong>`, { sticky: true });
-
-              layer.bindPopup(`
-                <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:4px; min-width:210px;">
-                  <div style="font-size:10px; font-weight:700; color:#c2410c; text-transform:uppercase; margin-bottom:2px;">
-                    ${routeType}
-                  </div>
-                  <div style="font-size:13px; font-weight:700; color:#1c1917; margin-bottom:4px;">
-                    ${routeName}
-                  </div>
-                  ${desc ? `<div style="font-size:11px; color:#57534e; margin-bottom:8px; line-height:1.4;">${desc}</div>` : ''}
-                  <a 
-                    href="${getWikiUrl(routeName)}" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    style="display:inline-flex; align-items:center; justify-content:center; gap:5px; width:100%; padding:6px 10px; border-radius:6px; background-color:#1c1917; color:#ffffff; font-size:11px; font-weight:700; text-decoration:none; box-sizing:border-box;"
-                  >
-                    Article Wikipédia
-                  </a>
-                </div>
-              `, { autoPan: true });
-            }}
           />
         )}
 
@@ -710,46 +700,6 @@ export default function HistoricalAtlas({
                   </div>
                   <div style={{ fontSize: 11, color: '#57534e', marginTop: 2, marginBottom: 8 }}>
                     {pt.event.titre} ({formatYear(pt.event.date_debut)})
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => onOpenDrawer(pt.event)}
-                      style={{
-                        width: '100%',
-                        padding: '5px 10px',
-                        borderRadius: 6,
-                        border: 'none',
-                        backgroundColor: '#b45309',
-                        color: '#ffffff',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Approfondir
-                    </button>
-                    <a
-                      href={getWikiUrl(pt.nom || pt.event.titre)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '100%',
-                        padding: '4px 10px',
-                        borderRadius: 6,
-                        backgroundColor: '#f3ece0',
-                        color: '#1c1917',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        textDecoration: 'none',
-                        boxSizing: 'border-box'
-                      }}
-                    >
-                      Wikipédia
-                    </a>
                   </div>
                 </div>
               </Popup>
