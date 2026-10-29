@@ -54,7 +54,7 @@ export default function TimelineCanvas() {
   const [filterMode, setFilterMode] = useState('tags');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Gestion du split ajustable : 0.35 (Grande frise), 0.5 (Égalité), 0.65 (Grande carte)
+  // Ratios rééquilibrés pour éviter l'écrasement sur mobile
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
 
@@ -283,14 +283,15 @@ export default function TimelineCanvas() {
     hitboxesRef.current = [];
 
     const isMobile = w < 640;
-    const barY = h * (isMobile ? 0.65 : 0.58);
+    // Calage vertical optimisé : la frise reste toujours au centre de son espace
+    const barY = Math.round(h * (isMobile ? 0.60 : 0.58));
 
     const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
     const trackH = Math.round((isMobile ? 16 : 18) + zoomFactor * (isMobile ? 8 : 12));
     const basePadding = Math.round(4 + zoomFactor * 3);
     const periodFontSize = Math.round(10 + zoomFactor * 2.5);
 
-    const defaultHalfH = Math.round((isMobile ? 24 : 26) + zoomFactor * (isMobile ? 18 : 28));
+    const defaultHalfH = Math.round((isMobile ? 22 : 26) + zoomFactor * (isMobile ? 16 : 28));
 
     const xStart = yearToX(GLOBAL_MIN);
     const xEnd = yearToX(GLOBAL_MAX);
@@ -534,7 +535,7 @@ export default function TimelineCanvas() {
       ctx.moveTo(tx, barY + defaultHalfH);
       ctx.lineTo(tx, barY + defaultHalfH + 6);
       ctx.stroke();
-      ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
+      ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 16 : 22));
     }
 
     let minImportanceForText = 1;
@@ -564,8 +565,8 @@ export default function TimelineCanvas() {
       }
       pinTracks[trackIndex] = x + labelW;
 
-      const baseStem = isMobile ? 22 : 36;
-      const stepStem = isMobile ? 18 : 30;
+      const baseStem = isMobile ? 20 : 36;
+      const stepStem = isMobile ? 16 : 30;
       const decalageY = baseStem + (trackIndex % 5) * stepStem;
       const yT = (barY - defaultHalfH) - decalageY;
 
@@ -648,7 +649,6 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // REPÈRE VERTICAL DE L'ANNÉE DE LA CARTE (ZÉRO ÉMOJI)
     if (isAtlasOpen && atlasActiveYear !== null) {
       const atlasX = yearToX(atlasActiveYear);
 
@@ -819,9 +819,13 @@ export default function TimelineCanvas() {
     chargerEvenements();
   }, []);
 
+  // Déclenchement automatique immédiat sur changement de splitRatio ou repli de l'Atlas
+  useEffect(() => {
+    updateSizesAndDraw();
+  }, [isAtlasOpen, splitRatio]);
+
   useEffect(() => {
     window.addEventListener('resize', updateSizesAndDraw);
-    updateSizesAndDraw();
     return () => window.removeEventListener('resize', updateSizesAndDraw);
   }, [isAtlasOpen, splitRatio]);
 
@@ -1239,7 +1243,7 @@ export default function TimelineCanvas() {
       flexDirection: 'column'
     }}>
 
-      {/* BANDEAU D'EN-TÊTE DÉDIÉ (AU-DESSUS DE LA CARTE, PAS PAR-DESSUS) */}
+      {/* BANDEAU D'EN-TÊTE DÉDIÉ (44 px) */}
       <header style={{
         height: HEADER_H,
         minHeight: HEADER_H,
@@ -1249,7 +1253,7 @@ export default function TimelineCanvas() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 10px 0 46px', // Dégage le bouton burger à gauche
+        padding: '0 10px 0 46px',
         boxSizing: 'border-box',
         zIndex: 30
       }}>
@@ -1265,7 +1269,7 @@ export default function TimelineCanvas() {
           }}>
             <button
               type="button"
-              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.65); }}
+              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.58); }}
               style={{
                 padding: '3px 7px',
                 backgroundColor: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
@@ -1297,7 +1301,7 @@ export default function TimelineCanvas() {
             </button>
             <button
               type="button"
-              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.35); }}
+              onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.38); }}
               style={{
                 padding: '3px 7px',
                 backgroundColor: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
@@ -1331,7 +1335,7 @@ export default function TimelineCanvas() {
           </button>
         </div>
 
-        {/* Bouton d'ajout discret intégré dans le bandeau */}
+        {/* Bouton d'ajout */}
         <button
           type="button"
           onClick={handleOpenCreateModal}
@@ -1354,10 +1358,10 @@ export default function TimelineCanvas() {
         </button>
       </header>
 
-      {/* ZONE CENTRALE : ATLAS + FRISE */}
+      {/* ZONE CENTRALE */}
       <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
 
-        {/* 1. L'ATLAS (S'affiche sous le bandeau, sans widget parasite par-dessus) */}
+        {/* ATLAS */}
         {isAtlasOpen && (
           <div
             style={{
@@ -1369,8 +1373,7 @@ export default function TimelineCanvas() {
               borderBottom: '1px solid #e7ded0',
               backgroundColor: '#0f172a',
               zIndex: 10,
-              overflow: 'hidden',
-              transition: 'height 0.2s ease'
+              overflow: 'hidden'
             }}
           >
             <HistoricalAtlas
@@ -1384,7 +1387,7 @@ export default function TimelineCanvas() {
           </div>
         )}
 
-        {/* INDICATEUR DISCRET DE PÉRIODE SUR LA FRISE */}
+        {/* INDICATEUR DE PÉRIODE */}
         <div
           style={{
             position: 'absolute',
@@ -1394,8 +1397,7 @@ export default function TimelineCanvas() {
             pointerEvents: 'none',
             display: 'flex',
             flexDirection: 'column',
-            gap: 1,
-            transition: 'top 0.2s ease'
+            gap: 1
           }}
         >
           <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#71717a' }}>
@@ -1412,7 +1414,7 @@ export default function TimelineCanvas() {
           </div>
         </div>
 
-        {/* 2. LE CANVAS PRINCIPAL DE LA FRISE */}
+        {/* CANVAS DE LA FRISE */}
         <div style={{
           position: 'absolute',
           top: isAtlasOpen ? `${Math.round(splitRatio * 100)}%` : 0,
@@ -1420,14 +1422,13 @@ export default function TimelineCanvas() {
           width: '100%',
           height: isAtlasOpen ? `${100 - Math.round(splitRatio * 100)}%` : '100%',
           cursor: 'grab',
-          touchAction: 'none',
-          transition: 'top 0.2s ease, height 0.2s ease'
+          touchAction: 'none'
         }}>
           <div style={{ width: '100%', height: 'calc(100% - 60px)' }}>
             <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
           </div>
 
-          {/* 3. MINIMAP BASSE */}
+          {/* MINIMAP BASSE */}
           <div style={{
             position: 'absolute',
             bottom: 0,
@@ -1446,14 +1447,12 @@ export default function TimelineCanvas() {
 
       </div>
 
-      {/* TIROIR LATÉRAL DE CONNAISSANCES */}
       <KnowledgeSplitView
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         event={drawerEvent}
       />
 
-      {/* VOLET DE FILTRES LATÉRAL */}
       <FilterDrawer
         isOpen={isFilterOpen}
         onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
@@ -1487,7 +1486,6 @@ export default function TimelineCanvas() {
         onToggleMapLayer={handleToggleMapLayer}
       />
 
-      {/* POP-UP CONTEXTUELLE AU CLIC */}
       {selectedEvent && (() => {
         const span = viewRange.max - viewRange.min;
         if (span <= 0) return null;
