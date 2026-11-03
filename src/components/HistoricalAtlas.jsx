@@ -113,7 +113,6 @@ const HISTORICAL_YEAR_SLICES = [
   1600, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914, 1920, 1938, 1945, 1994
 ];
 
-// Tranches géologiques PALEOMAP (en Millions d'années Ma)
 const GEOLOGY_MA_SLICES = [400, 300, 250, 200, 150, 100, 66, 20];
 
 function getClosestHistoricalFile(year) {
@@ -137,6 +136,10 @@ function getClosestHistoricalFile(year) {
 
 function getClosestGeologySliceMa(year) {
   const currentMa = Math.abs(year) / 1000000;
+  if (currentMa > 450) {
+    return null;
+  }
+
   let closest = GEOLOGY_MA_SLICES[0];
   let minDiff = Math.abs(currentMa - closest);
   for (const s of GEOLOGY_MA_SLICES) {
@@ -190,29 +193,10 @@ function findEntityMeta(rawName) {
   return null;
 }
 
-function getWikiUrl(rawName) {
-  if (!rawName || rawName.trim().length === 0) {
-    return 'https://fr.wikipedia.org/wiki/Histoire_du_monde';
-  }
-
-  const meta = findEntityMeta(rawName);
-
-  if (meta && meta.fr) {
-    return `https://fr.wikipedia.org/wiki/${encodeURIComponent(meta.fr)}`;
-  }
-
-  if (meta && meta.en) {
-    return `https://en.wikipedia.org/wiki/${encodeURIComponent(meta.en)}`;
-  }
-
-  const clean = rawName.trim();
-  const formattedEn = clean.replace(/\s+/g, '_');
-  return `https://en.wikipedia.org/wiki/${encodeURIComponent(formattedEn)}`;
-}
-
-function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
+function DynamicMapBridge({ boundingBoxCoords, isManualOverride, isGeologyMode, geologyLayerKey }) {
   const map = useMap();
   const lastCenterKeyRef = useRef('');
+  const lastGeologySliceRef = useRef(null);
   const debounceTimerRef = useRef(null);
 
   useEffect(() => {
@@ -222,8 +206,28 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
     return () => clearTimeout(timer);
   }, [map]);
 
+  // Recadrage automatique adapté à la géologie et aux points d'événements
   useEffect(() => {
-    if (isManualOverride || boundingBoxCoords.length === 0) return;
+    if (isManualOverride) return;
+
+    // En mode géologique : cadrage automatique global sur la masse continentale
+    if (isGeologyMode) {
+      if (geologyLayerKey === lastGeologySliceRef.current) return;
+      lastGeologySliceRef.current = geologyLayerKey;
+
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        // Cadrage mondial légèrement décalé vers le Sud (englobe le Gondwana)
+        map.flyTo([-12.0, 20.0], 2, { animate: true, duration: 1.0 });
+      }, 100);
+
+      return () => {
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      };
+    }
+
+    // En mode histoire : cadrage sur les repères actifs
+    if (boundingBoxCoords.length === 0) return;
 
     const bounds = L.latLngBounds(boundingBoxCoords);
     if (!bounds.isValid()) return;
@@ -252,13 +256,14 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride }) {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [map, boundingBoxCoords, isManualOverride]);
+  }, [map, boundingBoxCoords, isManualOverride, isGeologyMode, geologyLayerKey]);
 
   return null;
 }
 
 export default function HistoricalAtlas({ 
   viewRange, 
+  targetDate,
   events = [], 
   selectedEvent, 
   onOpenDrawer, 
@@ -274,21 +279,43 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  // Détection de l'année observée : on prend la borne la plus récente visible si on navigue vers l'avant
+  // Pré-chargement des 8 tranches géologiques
+  useEffect(() => {
+    GEOLOGY_MA_SLICES.forEach((ma) => {
+      const cacheKey = `geo_ma_${ma}`;
+      if (!cacheRef.current[cacheKey]) {
+        fetch(`https://gws.gplates.org/reconstruct/coastlines/?time=${ma}&model=PALEOMAP`)
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data) cacheRef.current[cacheKey] = data;
+          })
+          .catch(() => {});
+      }
+    });
+  }, []);
+
   const currentCenterYear = useMemo(() => {
+    if (typeof targetDate === 'number') return targetDate;
     if (!viewRange) return 200;
-    // Si la fenêtre est très large (géologique), le bord droit (max) reflète l'avancée vers le présent
-    if (viewRange.max < -10000 && viewRange.max - viewRange.min > 100000000) {
-      return Math.round(viewRange.max);
-    }
     return Math.round((viewRange.min + viewRange.max) / 2);
-  }, [viewRange]);
+  }, [targetDate, viewRange]);
 
   const isGeologyMode = currentCenterYear < -10000;
 
   useEffect(() => {
+    let isCurrentEffect = true;
+
     if (isGeologyMode) {
       const targetMa = getClosestGeologySliceMa(currentCenterYear);
+
+      if (targetMa === null) {
+        setWorldGeoJson(null);
+        setActiveMapSlice(null);
+        if (onMapYearChange) onMapYearChange(null);
+        setIsLoadingBorders(false);
+        return;
+      }
+
       const targetYearEquivalent = -targetMa * 1000000;
       const cacheKey = `geo_ma_${targetMa}`;
 
@@ -301,6 +328,7 @@ export default function HistoricalAtlas({
         setWorldGeoJson(cacheRef.current[cacheKey]);
         setActiveMapSlice(targetYearEquivalent);
         if (onMapYearChange) onMapYearChange(targetYearEquivalent);
+        setIsLoadingBorders(false);
         return;
       }
 
@@ -311,6 +339,7 @@ export default function HistoricalAtlas({
           return res.json();
         })
         .then(data => {
+          if (!isCurrentEffect) return;
           cacheRef.current[cacheKey] = data;
           setWorldGeoJson(data);
           setActiveMapSlice(targetYearEquivalent);
@@ -318,11 +347,14 @@ export default function HistoricalAtlas({
           setIsLoadingBorders(false);
         })
         .catch(err => {
+          if (!isCurrentEffect) return;
           console.error("Erreur GPlates:", err);
           setIsLoadingBorders(false);
         });
 
-      return;
+      return () => {
+        isCurrentEffect = false;
+      };
     }
 
     const { year: targetYear, filename } = getClosestHistoricalFile(currentCenterYear);
@@ -348,6 +380,7 @@ export default function HistoricalAtlas({
         return res.json();
       })
       .then(data => {
+        if (!isCurrentEffect) return;
         cacheRef.current[filename] = data;
         setWorldGeoJson(data);
         setActiveMapSlice(targetYear);
@@ -358,6 +391,7 @@ export default function HistoricalAtlas({
         fetch(`https://raw.githubusercontent.com/aourednik/historical-basemaps/master/geojson/${filename}`)
           .then(res => res.json())
           .then(data => {
+            if (!isCurrentEffect) return;
             cacheRef.current[filename] = data;
             setWorldGeoJson(data);
             setActiveMapSlice(targetYear);
@@ -365,9 +399,14 @@ export default function HistoricalAtlas({
             setIsLoadingBorders(false);
           })
           .catch(() => {
+            if (!isCurrentEffect) return;
             setIsLoadingBorders(false);
           });
       });
+
+    return () => {
+      isCurrentEffect = false;
+    };
   }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange, isGeologyMode]);
 
   useEffect(() => {
@@ -464,8 +503,14 @@ export default function HistoricalAtlas({
 
   const handleRecalibrate = () => {
     setIsManualOverride(false);
-    if (!mapRef.current || combinedBoundsCoords.length === 0) return;
+    if (!mapRef.current) return;
 
+    if (isGeologyMode) {
+      mapRef.current.flyTo([-12.0, 20.0], 2, { duration: 1.0 });
+      return;
+    }
+
+    if (combinedBoundsCoords.length === 0) return;
     const bounds = L.latLngBounds(combinedBoundsCoords);
     if (!bounds.isValid()) return;
 
@@ -550,8 +595,11 @@ export default function HistoricalAtlas({
         </div>
 
         <span style={{ color: '#1c1917', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          {isGeologyMode ? 'Continents : ' : ''}
-          {activeMapSlice !== null ? formatYear(activeMapSlice) : '...'}
+          {isGeologyMode ? (
+            activeMapSlice !== null ? `Continents : ${formatYear(activeMapSlice)}` : 'Terre primitive (pas de données)'
+          ) : (
+            activeMapSlice !== null ? formatYear(activeMapSlice) : '...'
+          )}
         </span>
 
         {isLoadingBorders && (
@@ -590,13 +638,16 @@ export default function HistoricalAtlas({
 
       <MapContainer
         ref={mapRef}
-        center={[36.0, 40.0]}
-        zoom={4}
+        center={[-12.0, 20.0]}
+        zoom={2}
+        minZoom={1}
         style={{ width: '100%', height: '100%' }}
       >
         <DynamicMapBridge
           boundingBoxCoords={combinedBoundsCoords}
           isManualOverride={isManualOverride}
+          isGeologyMode={isGeologyMode}
+          geologyLayerKey={activeMapSlice}
         />
 
         <TileLayer
@@ -608,7 +659,7 @@ export default function HistoricalAtlas({
 
         {mapLayers.worldEmpires && worldGeoJson && (
           <GeoJSON
-            key={`world-layer-${activeMapSlice}`}
+            key={`world-layer-${activeMapSlice || 'empty'}`}
             data={worldGeoJson}
             style={() => {
               if (isGeologyMode) {
@@ -630,7 +681,7 @@ export default function HistoricalAtlas({
             }}
             onEachFeature={(feature, layer) => {
               if (isGeologyMode) {
-                const label = `Masse continentale (${formatYear(activeMapSlice)})`;
+                const label = `Masse continentale (${activeMapSlice ? formatYear(activeMapSlice) : ''})`;
                 layer.bindTooltip(`<strong>${label}</strong>`, { sticky: true });
                 return;
               }
