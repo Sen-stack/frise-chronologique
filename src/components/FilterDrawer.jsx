@@ -59,7 +59,7 @@ export default function FilterDrawer({
         bottom: 0,
         width: 300,
         maxWidth: '85vw',
-        zIndex: 25,
+        zIndex: 35,
         backgroundColor: isLight ? 'rgba(250, 248, 245, 0.97)' : 'rgba(15, 23, 42, 0.96)',
         backdropFilter: 'blur(20px)',
         borderRight: isLight ? '1px solid rgba(180, 150, 120, 0.3)' : '1px solid #334155',
@@ -80,10 +80,10 @@ export default function FilterDrawer({
         title={isOpen ? "Replier le menu" : "Afficher le menu"}
         style={{
           position: 'absolute',
-          top: 18,
+          top: 86,
           left: '100%',
-          width: 26,
-          height: 34,
+          width: 28,
+          height: 38,
           backgroundColor: isLight ? 'rgba(250, 248, 245, 0.97)' : 'rgba(15, 23, 42, 0.96)',
           backdropFilter: 'blur(16px)',
           borderTop: isLight ? '1px solid rgba(180, 150, 120, 0.3)' : '1px solid #334155',
@@ -92,14 +92,15 @@ export default function FilterDrawer({
           borderLeft: 'none',
           borderTopRightRadius: 8,
           borderBottomRightRadius: 8,
-          boxShadow: '3px 2px 8px rgba(0, 0, 0, 0.08)',
+          boxShadow: '4px 3px 10px rgba(0, 0, 0, 0.12)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           color: isLight ? '#78350f' : '#38bdf8',
           fontSize: 12,
-          fontWeight: 700
+          fontWeight: 700,
+          zIndex: 36
         }}
       >
         {isOpen ? '◀' : '▶'}
@@ -119,7 +120,7 @@ export default function FilterDrawer({
           CHRONOS
         </div>
 
-        {/* Bouton de bascule Jour / Nuit discret */}
+        {/* Bouton de bascule Jour / Nuit */}
         <button
           type="button"
           onClick={() => setCurrentTheme && setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
