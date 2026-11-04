@@ -88,24 +88,59 @@ const SILK_ROAD_GEOJSON = {
   ]
 };
 
-const defaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [22, 36],
-  iconAnchor: [11, 36],
-  popupAnchor: [1, -30],
-  shadowSize: [36, 36]
-});
+// Pastille circulaire neumorphique avec anneau pulsatif doux
+function createNeuMarkerIcon(color = '#0284c7', isSelected = false) {
+  const size = isSelected ? 22 : 18;
+  const coreSize = isSelected ? 10 : 8;
+  const pulseBorder = isSelected ? 'rgba(2, 132, 199, 0.7)' : 'rgba(166, 180, 200, 0.6)';
 
-const selectedIcon = L.icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [26, 42],
-  iconAnchor: [13, 42],
-  popupAnchor: [1, -34],
-  shadowSize: [42, 42]
-});
+  const html = `
+    <div style="
+      position: relative;
+      width: ${size}px;
+      height: ${size}px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    ">
+      <div style="
+        position: absolute;
+        inset: -5px;
+        border-radius: 50%;
+        border: 1.5px solid ${pulseBorder};
+        animation: neuPulse 2.2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+        pointer-events: none;
+      "></div>
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 50%;
+        background: #eaf0f6;
+        box-shadow: 2px 2px 5px rgba(166, 180, 200, 0.6), -2px -2px 5px rgba(255, 255, 255, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255, 255, 255, 0.8);
+      ">
+        <div style="
+          width: ${coreSize}px;
+          height: ${coreSize}px;
+          border-radius: 50%;
+          background: ${color};
+          box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.25);
+        "></div>
+      </div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: 'neu-custom-marker',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2 - 4]
+  });
+}
 
 const HISTORICAL_YEAR_SLICES = [
   -3000, -2000, -1000, -500, -323, -200, -1, 100, 200, 300, 400, 500, 
@@ -197,7 +232,6 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract,
   const lastGeologySliceRef = useRef(null);
   const debounceTimerRef = useRef(null);
 
-  // Détection native des interactions Leaflet (glisser au doigt sur mobile ou souris sur PC)
   useMapEvents({
     dragstart: () => onUserInteract(),
     zoomstart: () => onUserInteract()
@@ -268,9 +302,10 @@ export default function HistoricalAtlas({
   selectedEvent, 
   onOpenDrawer, 
   onMapYearChange,
-  mapLayers = { worldEmpires: true, subDivisions: true, tradeRoutes: false, markers: true }
+  mapLayers = { worldEmpires: true, subDivisions: true, tradeRoutes: false, markers: true },
+  isReliefProp = false,
+  recalibrateTrigger = 0
 }) {
-  const [isReliefActive, setIsReliefActive] = useState(false);
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [worldGeoJson, setWorldGeoJson] = useState(null);
   const [subDivisionsGeoJson, setSubDivisionsGeoJson] = useState(null);
@@ -520,127 +555,32 @@ export default function HistoricalAtlas({
     }
   };
 
-  const currentBaseMap = isReliefActive ? BASE_MAPS.topo : BASE_MAPS.neutre;
+  // Recalibrage automatique déclenché par le bouton Play violet de la barre d'outils
+  useEffect(() => {
+    if (recalibrateTrigger > 0) {
+      handleRecalibrate();
+    }
+  }, [recalibrateTrigger]);
+
+  const currentBaseMap = isReliefProp ? BASE_MAPS.topo : BASE_MAPS.neutre;
 
   return (
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
-      onTouchStart={(e) => {
-        if (!e.target.closest('#atlas-controls-block')) {
-          setIsManualOverride(true);
-        }
-      }}
-      onMouseDown={(e) => {
-        if (!e.target.closest('#atlas-controls-block')) {
-          setIsManualOverride(true);
-        }
-      }}
-      onWheel={(e) => {
-        if (!e.target.closest('#atlas-controls-block')) {
-          setIsManualOverride(true);
-        }
-      }}
+      onTouchStart={() => setIsManualOverride(true)}
+      onMouseDown={() => setIsManualOverride(true)}
+      onWheel={() => setIsManualOverride(true)}
     >
-      {/* BLOC DE CONTRÔLES HAUT-DROITE (ALIGNÉ SOUS LE TOGGLE CARTE) */}
-      <div
-        id="atlas-controls-block"
-        style={{
-          position: 'absolute',
-          top: 10,
-          right: 12,
-          zIndex: 1000,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          gap: 6,
-          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
-        }}
-      >
-        {/* Toggle Relief */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(8px)',
-            padding: '3px 7px 3px 9px',
-            borderRadius: 16,
-            border: '1px solid #e7ded0',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
-          }}
-        >
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
-            Relief
-          </span>
-          <div
-            onClick={() => setIsReliefActive(prev => !prev)}
-            title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
-            style={{
-              width: 28,
-              height: 16,
-              backgroundColor: isReliefActive ? '#10b981' : '#cbd5e1',
-              borderRadius: 10,
-              padding: 2,
-              boxSizing: 'border-box',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: isReliefActive ? 'flex-end' : 'flex-start',
-              transition: 'background-color 0.2s ease'
-            }}
-          >
-            <div style={{
-              width: 12,
-              height: 12,
-              borderRadius: '50%',
-              backgroundColor: '#ffffff',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.25)'
-            }} />
-          </div>
-        </div>
-
-        {/* Bouton de synchronisation situé en dessous */}
-        {isManualOverride ? (
-          <button
-            type="button"
-            onClick={handleRecalibrate}
-            style={{
-              padding: '3px 8px',
-              borderRadius: 12,
-              border: 'none',
-              backgroundColor: '#b45309',
-              color: '#ffffff',
-              fontWeight: 700,
-              fontSize: 9.5,
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(180, 83, 9, 0.35)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}
-          >
-            <span>↻</span>
-            <span>Re-synch</span>
-          </button>
-        ) : (
-          <div
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.9)',
-              backdropFilter: 'blur(6px)',
-              padding: '2px 7px',
-              borderRadius: 10,
-              border: '1px solid #e7ded0',
-              fontSize: 9,
-              color: '#15803d',
-              fontWeight: 700,
-              letterSpacing: '0.5px'
-            }}
-          >
-            ● Sync
-          </div>
-        )}
-      </div>
+      <style>{`
+        @keyframes neuPulse {
+          0% { transform: scale(0.7); opacity: 1; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        .neu-custom-marker {
+          background: transparent;
+          border: none;
+        }
+      `}</style>
 
       <MapContainer
         ref={mapRef}
@@ -658,7 +598,7 @@ export default function HistoricalAtlas({
         />
 
         <TileLayer
-          key={isReliefActive ? 'topo' : 'neutre'}
+          key={isReliefProp ? 'topo' : 'neutre'}
           attribution={currentBaseMap.attribution}
           url={currentBaseMap.url}
           maxZoom={currentBaseMap.maxZoom}
@@ -739,14 +679,16 @@ export default function HistoricalAtlas({
           />
         )}
 
+        {/* Repères sous forme de pastilles neumorphiques douces avec halo pulsatif */}
         {mapLayers.markers && activePoints.map(pt => {
           const isSelected = selectedEvent && selectedEvent.id === pt.eventId;
+          const markerColor = isSelected ? '#0284c7' : '#e11d48';
 
           return (
             <Marker
               key={pt.id}
               position={[pt.latitude, pt.longitude]}
-              icon={isSelected ? selectedIcon : defaultIcon}
+              icon={createNeuMarkerIcon(markerColor, isSelected)}
             >
               <Popup autoPan={true} autoPanPadding={[20, 20]} minWidth={220}>
                 <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", padding: 2 }}>

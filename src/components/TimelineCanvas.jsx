@@ -34,7 +34,6 @@ export default function TimelineCanvas() {
   const canvasMiniRef = useRef(null);
 
   const [activeChapter, setActiveChapter] = useState('histoire');
-
   const [viewRange, setViewRange] = useState({ min: -3500, max: 2026 });
   const [currentTheme, setCurrentTheme] = useState(() => {
     return localStorage.getItem('chronos_theme') || 'light';
@@ -64,6 +63,9 @@ export default function TimelineCanvas() {
 
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
+
+  const [isReliefActive, setIsReliefActive] = useState(false);
+  const [recalibrateTrigger, setRecalibrateTrigger] = useState(0);
 
   const [mapLayers, setMapLayers] = useState({
     worldEmpires: true,
@@ -111,8 +113,6 @@ export default function TimelineCanvas() {
 
   const targetViewRef = useRef({ min: -3500, max: 2026 });
   const animFrameRef = useRef(null);
-  const textureShiftRef = useRef(0);
-  const stonePatternRef = useRef(null);
 
   const activeChapterRef = useRef(activeChapter);
   useEffect(() => { activeChapterRef.current = activeChapter; }, [activeChapter]);
@@ -124,32 +124,6 @@ export default function TimelineCanvas() {
     const chapter = TIMELINE_CHAPTERS.find(c => c.id === activeChapterRef.current);
     return chapter ? { min: chapter.min, max: chapter.max } : { min: GLOBAL_MIN, max: GLOBAL_MAX };
   };
-
-  useEffect(() => {
-    const stoneNoise = document.createElement('canvas');
-    stoneNoise.width = 600;
-    stoneNoise.height = 300;
-    const nctx = stoneNoise.getContext('2d');
-
-    nctx.fillStyle = '#333842';
-    nctx.fillRect(0, 0, 600, 300);
-
-    for (let i = 0; i < 20000; i++) {
-      const gx = Math.random() * 600;
-      const gy = Math.random() * 300;
-      const isLight = Math.random() < 0.48;
-      nctx.fillStyle = isLight
-        ? `rgba(255, 255, 255, ${0.04 + Math.random() * 0.08})`
-        : `rgba(0, 0, 0, ${0.06 + Math.random() * 0.10})`;
-      nctx.fillRect(gx, gy, 1, 1);
-    }
-
-    const cMain = canvasMainRef.current;
-    if (cMain) {
-      const ctx = cMain.getContext('2d');
-      stonePatternRef.current = ctx.createPattern(stoneNoise, 'repeat');
-    }
-  }, []);
 
   const updateInertia = () => {
     const cur = viewRef.current;
@@ -169,7 +143,7 @@ export default function TimelineCanvas() {
     }
   };
 
-  const smoothSetView = (nextTgt, deltaX = 0) => {
+  const smoothSetView = (nextTgt) => {
     const bounds = getActiveBounds();
     let span = nextTgt.max - nextTgt.min;
     const maxAllowedSpan = bounds.max - bounds.min;
@@ -187,9 +161,6 @@ export default function TimelineCanvas() {
     }
 
     targetViewRef.current = nextTgt;
-    if (deltaX !== 0) {
-      textureShiftRef.current += deltaX;
-    }
     if (!animFrameRef.current) {
       animFrameRef.current = requestAnimationFrame(updateInertia);
     }
@@ -283,7 +254,6 @@ export default function TimelineCanvas() {
   };
 
   const drawScene = () => {
-    const th = THEMES[currentTheme]?.canvas || THEMES.light.canvas;
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
     if (!cMain || !cMini) return;
@@ -308,18 +278,20 @@ export default function TimelineCanvas() {
     const span = vMax - vMin;
     const yearToX = (year) => ((year - vMin) / span) * w;
 
-    ctx.clearRect(0, 0, w, h);
+    // Fond général Soft UI #eaf0f6
+    ctx.fillStyle = '#eaf0f6';
+    ctx.fillRect(0, 0, w, h);
     hitboxesRef.current = [];
 
     const isMobile = w < 640;
     const barY = Math.round(h * (isMobile ? 0.60 : 0.58));
 
     const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
-    const trackH = Math.round((isMobile ? 16 : 18) + zoomFactor * (isMobile ? 8 : 12));
-    const basePadding = Math.round(4 + zoomFactor * 3);
-    const periodFontSize = Math.round(10 + zoomFactor * 2.5);
+    const trackH = Math.round((isMobile ? 18 : 22) + zoomFactor * (isMobile ? 6 : 10));
+    const basePadding = Math.round(6 + zoomFactor * 4);
+    const periodFontSize = Math.round(10.5 + zoomFactor * 2);
 
-    const defaultHalfH = Math.round((isMobile ? 22 : 26) + zoomFactor * (isMobile ? 16 : 28));
+    const defaultHalfH = Math.round((isMobile ? 18 : 22));
 
     const xStart = yearToX(currentBounds.min);
     const xEnd = yearToX(currentBounds.max);
@@ -352,64 +324,64 @@ export default function TimelineCanvas() {
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
 
+    // ========================================================
+    // --- 1. RAIL EN CREUX NEUMORPHIQUE (INSET SHADOW) ---
+    // ========================================================
     if (visibleW > 0) {
       const topY = barY - defaultHalfH;
       const totalH = defaultHalfH * 2;
+      const railRadius = totalH / 2;
 
       ctx.save();
-      ctx.shadowColor = currentTheme === 'light' ? 'rgba(15, 23, 42, 0.12)' : 'rgba(0, 0, 0, 0.55)';
-      ctx.shadowBlur = 18;
-      ctx.shadowOffsetY = 6;
-      ctx.fillStyle = '#2d323b';
-
+      // Fond creusé
+      ctx.fillStyle = '#dfe6ee';
       ctx.beginPath();
       if (ctx.roundRect) {
-        ctx.roundRect(visibleX1, topY, visibleW, totalH, 8);
+        ctx.roundRect(visibleX1, topY, visibleW, totalH, railRadius);
       } else {
         ctx.rect(visibleX1, topY, visibleW, totalH);
       }
       ctx.fill();
-      ctx.restore();
 
+      // Ombre intérieure haute (sombre)
       ctx.save();
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(visibleX1, topY, visibleW, totalH, 8);
-      } else {
-        ctx.rect(visibleX1, topY, visibleW, totalH);
-      }
       ctx.clip();
-
-      if (stonePatternRef.current) {
-        if (ctx.setTransform && stonePatternRef.current.setTransform) {
-          const matrix = new DOMMatrix().scale(dpr, dpr).translate(textureShiftRef.current % 600, 0);
-          stonePatternRef.current.setTransform(matrix);
-        }
-        ctx.fillStyle = stonePatternRef.current;
-        ctx.fill();
-      } else {
-        ctx.fillStyle = '#333842';
-        ctx.fill();
-      }
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(166, 180, 200, 0.7)';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(visibleX1, topY);
+      ctx.lineTo(visibleX2, topY);
       ctx.stroke();
-      ctx.restore();
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      // Rehaut intérieur bas (lumière blanche)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(visibleX1, topY + totalH);
+      ctx.lineTo(visibleX2, topY + totalH);
+      ctx.stroke();
+
+      // Trait d'axe central discret
+      ctx.strokeStyle = 'rgba(166, 180, 200, 0.35)';
       ctx.lineWidth = 1;
+      ctx.setLineDash([4, 6]);
       ctx.beginPath();
       ctx.moveTo(visibleX1, barY);
       ctx.lineTo(visibleX2, barY);
       ctx.stroke();
+      ctx.restore();
+
+      ctx.restore();
     }
 
+    // ========================================================
+    // --- 2. CAPSULES FLOTTANTES D'EMPIRES ET DYNASTIES ---
+    // ========================================================
     gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
       const rX = Math.min(x1, x2);
-      const rW = Math.max(4, Math.abs(x2 - x1));
+      const rW = Math.max(8, Math.abs(x2 - x1));
 
       if (rX + rW < -100 || rX > w + 100) return;
 
@@ -419,22 +391,13 @@ export default function TimelineCanvas() {
       const dir = isTop ? -1 : 1;
 
       const transitionW = Math.max(16, trackH * 1.1);
+      const baseColor = p.couleur || style.stroke || '#0284c7';
 
       ctx.save();
-      ctx.fillStyle = isSelected ? style.stroke : (p.couleur || style.stroke || style.fill);
-      ctx.strokeStyle = isSelected ? '#ffffff' : (p.couleur || style.stroke);
-      ctx.lineWidth = isSelected ? 2.5 : (p.forme === 'ligne' ? 2 : 1.2);
-
-      if (p.style_trait === 'pointille') {
-        ctx.setLineDash([5, 4]);
-      } else {
-        ctx.setLineDash([]);
-      }
 
       let rectTop = 0;
       let rectH = trackH;
-
-      const yBase = barY + dir * (basePadding + p.level * (trackH + 3));
+      const yBase = barY + dir * (basePadding + defaultHalfH + p.level * (trackH + 6));
       rectTop = isTop ? yBase - trackH : yBase;
 
       let canDrop = false;
@@ -449,10 +412,19 @@ export default function TimelineCanvas() {
         }
       }
 
+      const pillRadius = trackH / 2;
+
+      // Ombre portée flottante neumorphique sous la capsule
+      ctx.shadowColor = isSelected ? 'rgba(2, 132, 199, 0.4)' : 'rgba(166, 180, 200, 0.45)';
+      ctx.shadowBlur = isSelected ? 12 : 7;
+      ctx.shadowOffsetY = isSelected ? 4 : 3;
+
       if (p.forme === 'ligne') {
         const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
         const tickH = Math.max(6, trackH * 0.4);
 
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth = isSelected ? 2.5 : 2;
         ctx.beginPath();
         ctx.moveTo(rX, lineY);
         ctx.lineTo(rX + rW, lineY);
@@ -464,17 +436,17 @@ export default function TimelineCanvas() {
 
         rectH = trackH;
       } else if (canDrop) {
+        // Jonction S fluide avec transition
         const actualTransW = Math.min(transitionW, remainingWAfterDrop * 0.8);
         const xTransStart = xSplit;
         const xTransEnd = xSplit + actualTransW;
 
         const targetLvl = p.level - 1;
-        const yStart = barY + dir * (basePadding + p.level * (trackH + 3));
-        const yEnd = barY + dir * (basePadding + targetLvl * (trackH + 3));
-        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
+        const yStart = barY + dir * (basePadding + defaultHalfH + p.level * (trackH + 6));
+        const yEnd = barY + dir * (basePadding + defaultHalfH + targetLvl * (trackH + 6));
 
         ctx.beginPath();
-        ctx.moveTo(rX + radius, yStart + dir * trackH);
+        ctx.moveTo(rX + pillRadius, yStart + dir * trackH);
         ctx.lineTo(xTransStart, yStart + dir * trackH);
 
         ctx.bezierCurveTo(
@@ -483,9 +455,9 @@ export default function TimelineCanvas() {
           xTransEnd, yEnd + dir * trackH
         );
 
-        ctx.lineTo(rX + rW - radius, yEnd + dir * trackH);
-        ctx.arcTo(rX + rW, yEnd + dir * trackH, rX + rW, yEnd, radius);
-        ctx.arcTo(rX + rW, yEnd, rX + rW - radius, yEnd, radius);
+        ctx.lineTo(rX + rW - pillRadius, yEnd + dir * trackH);
+        ctx.arcTo(rX + rW, yEnd + dir * trackH, rX + rW, yEnd, pillRadius);
+        ctx.arcTo(rX + rW, yEnd, rX + rW - pillRadius, yEnd, pillRadius);
 
         ctx.lineTo(xTransEnd, yEnd);
         ctx.bezierCurveTo(
@@ -494,36 +466,36 @@ export default function TimelineCanvas() {
           xTransStart, yStart
         );
 
-        ctx.lineTo(rX + radius, yStart);
-        ctx.arcTo(rX, yStart, rX, yStart + dir * trackH, radius);
-        ctx.arcTo(rX, yStart + dir * trackH, rX + radius, yStart + dir * trackH, radius);
-
+        ctx.lineTo(rX + pillRadius, yStart);
+        ctx.arcTo(rX, yStart, rX, yStart + dir * trackH, pillRadius);
+        ctx.arcTo(rX, yStart + dir * trackH, rX + pillRadius, yStart + dir * trackH, pillRadius);
         ctx.closePath();
 
-        ctx.save();
-        ctx.globalAlpha = p.opacite ?? 0.85;
+        ctx.fillStyle = baseColor;
+        ctx.globalAlpha = p.opacite ?? 0.88;
         ctx.fill();
-        ctx.restore();
 
+        ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = isSelected ? 2 : 1;
         ctx.stroke();
 
         rectTop = Math.min(yStart, yEnd, yStart + dir * trackH, yEnd + dir * trackH);
         rectH = Math.abs(yStart - yEnd) + trackH;
       } else {
-        const radius = p.forme === 'ruban' ? Math.round(trackH / 2) : 4;
-
+        // Capsule standard (Pill-shaped)
         ctx.beginPath();
         if (ctx.roundRect) {
-          ctx.roundRect(rX, rectTop, rW, trackH, radius);
+          ctx.roundRect(rX, rectTop, rW, trackH, pillRadius);
         } else {
           ctx.rect(rX, rectTop, rW, trackH);
         }
 
-        ctx.save();
-        ctx.globalAlpha = p.opacite ?? 0.85;
+        ctx.fillStyle = baseColor;
+        ctx.globalAlpha = p.opacite ?? 0.88;
         ctx.fill();
-        ctx.restore();
 
+        ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.7)';
+        ctx.lineWidth = isSelected ? 2 : 1;
         ctx.stroke();
       }
 
@@ -536,40 +508,48 @@ export default function TimelineCanvas() {
         evt: p
       });
 
-      if (rW > 30) {
+      // Libellé textuel dans la capsule
+      if (rW > 28) {
         ctx.save();
+        ctx.shadowColor = 'transparent';
         ctx.beginPath();
-        ctx.rect(rX + 2, rectTop, rW - 4, rectH);
+        ctx.rect(rX + 4, rectTop, rW - 8, rectH);
         ctx.clip();
         ctx.fillStyle = '#ffffff';
         ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(p.titre, rX + 6, rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
+        ctx.fillText(p.titre, rX + 8, rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
         ctx.restore();
       }
 
       ctx.restore();
     });
 
+    // ========================================================
+    // --- 3. GRADUATIONS DOUCES SUR LE FOND CLAIR ---
+    // ========================================================
     const interval = getTickInterval(span);
     const firstTick = Math.ceil(vMin / interval) * interval;
-    ctx.fillStyle = currentTheme === 'light' ? '#52525b' : th.tickText;
+    ctx.fillStyle = '#64748b';
     ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
     ctx.textAlign = 'center';
 
     for (let t = firstTick; t <= vMax; t += interval) {
       if (t < currentBounds.min || t > currentBounds.max) continue;
       const tx = yearToX(t);
-      ctx.strokeStyle = currentTheme === 'light' ? 'rgba(113, 113, 122, 0.4)' : th.ticks;
+      ctx.strokeStyle = 'rgba(166, 180, 200, 0.6)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tx, barY + defaultHalfH);
       ctx.lineTo(tx, barY + defaultHalfH + 6);
       ctx.stroke();
-      ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 16 : 22));
+      ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
     }
 
+    // ========================================================
+    // --- 4. REPÈRES PONCTUELS ÉPURÉS (SOFT PINS) ---
+    // ========================================================
     let minImportanceForText = 1;
     if (span > 5000) minImportanceForText = 4;
     else if (span > 800) minImportanceForText = 3;
@@ -597,29 +577,35 @@ export default function TimelineCanvas() {
       }
       pinTracks[trackIndex] = x + labelW;
 
-      const baseStem = isMobile ? 20 : 36;
-      const stepStem = isMobile ? 16 : 30;
+      const baseStem = isMobile ? 22 : 36;
+      const stepStem = isMobile ? 18 : 30;
       const decalageY = baseStem + (trackIndex % 5) * stepStem;
       const yT = (barY - defaultHalfH) - decalageY;
 
-      const pinColor = isSelected ? '#0284c7' : (evt.couleur || style.stroke || '#475569');
+      const pinColor = isSelected ? '#0284c7' : (evt.couleur || style.stroke || '#64748b');
 
       ctx.save();
-      ctx.strokeStyle = isSelected ? pinColor : 'rgba(148, 163, 184, 0.65)';
+      // Tige
+      ctx.strokeStyle = isSelected ? pinColor : 'rgba(166, 180, 200, 0.7)';
       ctx.lineWidth = isSelected ? 1.5 : 1;
       ctx.beginPath();
       ctx.moveTo(x, barY - defaultHalfH);
       ctx.lineTo(x, yT);
       ctx.stroke();
 
+      // Point bas
       ctx.fillStyle = pinColor;
       ctx.beginPath();
       ctx.arc(x, barY - defaultHalfH, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
       ctx.fill();
 
+      // Tête de jalon
       ctx.beginPath();
-      ctx.arc(x, yT, isSelected ? 4 : 3, 0, Math.PI * 2);
+      ctx.arc(x, yT, isSelected ? 4.5 : 3.5, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
       if (shouldShowLabel) {
         const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
@@ -634,7 +620,7 @@ export default function TimelineCanvas() {
         ctx.font = isSelected
           ? (isMobile ? '600 11px system-ui, sans-serif' : '600 12px system-ui, sans-serif')
           : (isMobile ? '500 10px system-ui, sans-serif' : '500 11px system-ui, sans-serif');
-        ctx.fillStyle = currentTheme === 'light' ? '#18181b' : '#f8fafc';
+        ctx.fillStyle = '#1e293b';
         ctx.fillText(titreTexte, x + 8, yT + 1);
       }
       ctx.restore();
@@ -649,52 +635,16 @@ export default function TimelineCanvas() {
       });
     });
 
-    if (xStart >= -120 && xStart <= w + 120) {
-      ctx.save();
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(xStart, barY - defaultHalfH - 12);
-      ctx.lineTo(xStart, barY + defaultHalfH + 12);
-      ctx.stroke();
-
-      ctx.fillStyle = '#ef4444';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText(formatYear(currentBounds.min), xStart - 8, barY);
-      ctx.restore();
-    }
-
-    if (xEnd >= -120 && xEnd <= w + 120) {
-      ctx.save();
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(xEnd, barY - defaultHalfH - 12);
-      ctx.lineTo(xEnd, barY + defaultHalfH + 12);
-      ctx.stroke();
-
-      ctx.fillStyle = '#10b981';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(formatYear(currentBounds.max), xEnd + 8, barY);
-      ctx.restore();
-    }
-
-    // Curseur temporel interactif mobile (Ligne fine avec Date dynamique uniquement)
+    // ========================================================
+    // --- 5. SCRUBBER TEMPOREL DOUX NEUMORPHIQUE ---
+    // ========================================================
     const cursorX = yearToX(cursorYearRef.current);
 
     if (cursorX >= -100 && cursorX <= w + 100) {
       ctx.save();
 
-      const grad = ctx.createLinearGradient(cursorX - 12, 0, cursorX + 12, 0);
-      grad.addColorStop(0, 'rgba(180, 83, 9, 0)');
-      grad.addColorStop(0.5, 'rgba(180, 83, 9, 0.15)');
-      grad.addColorStop(1, 'rgba(180, 83, 9, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(cursorX - 12, 0, 24, h);
-
-      ctx.strokeStyle = '#b45309';
+      // Ligne fine verticale
+      ctx.strokeStyle = '#5b4fe8';
       ctx.lineWidth = 1.2;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
@@ -703,44 +653,51 @@ export default function TimelineCanvas() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Badge allégé : juste la date
+      // Badge pilule neumorphique pour la date
       const labelText = formatYear(cursorYearRef.current);
       ctx.font = '600 10.5px monospace, system-ui, sans-serif';
-      const labelW = ctx.measureText(labelText).width + 14;
+      const labelW = ctx.measureText(labelText).width + 16;
       const badgeY = 8;
-      const badgeH = 18;
+      const badgeH = 20;
 
-      ctx.fillStyle = 'rgba(180, 83, 9, 0.92)';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-      ctx.shadowBlur = 5;
-      ctx.shadowOffsetY = 1;
+      ctx.fillStyle = '#eaf0f6';
+      ctx.shadowColor = 'rgba(166, 180, 200, 0.5)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
 
       ctx.beginPath();
       if (ctx.roundRect) {
-        ctx.roundRect(cursorX - labelW / 2, badgeY, labelW, badgeH, 4);
+        ctx.roundRect(cursorX - labelW / 2, badgeY, labelW, badgeH, 10);
       } else {
         ctx.rect(cursorX - labelW / 2, badgeY, labelW, badgeH);
       }
       ctx.fill();
 
       ctx.shadowColor = 'transparent';
-      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#5b4fe8';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(labelText, cursorX, badgeY + badgeH / 2);
 
-      ctx.fillStyle = '#b45309';
+      // Pastille centrale sur le rail
+      ctx.fillStyle = '#5b4fe8';
       ctx.beginPath();
-      ctx.arc(cursorX, barY - defaultHalfH, 3.5, 0, Math.PI * 2);
+      ctx.arc(cursorX, barY, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
       ctx.restore();
     }
 
-    // Rendu minimap
+    // ========================================================
+    // --- 6. MINIMAP BASSE NEUMORPHIQUE ---
+    // ========================================================
     mctx.clearRect(0, 0, mw, mh);
 
     const activeSegments = getChapterSegments(activeChapter);
@@ -752,7 +709,7 @@ export default function TimelineCanvas() {
       mctx.fillRect(curSegX, 0, segW, mh);
 
       if (i > 0) {
-        mctx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
+        mctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         mctx.lineWidth = 1;
         mctx.beginPath();
         mctx.moveTo(curSegX, 0);
@@ -760,7 +717,7 @@ export default function TimelineCanvas() {
         mctx.stroke();
       }
 
-      mctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+      mctx.fillStyle = '#ffffff';
       mctx.font = isMobile ? '700 7.5px system-ui, sans-serif' : '700 8.5px system-ui, sans-serif';
       mctx.textAlign = 'center';
       const labelText = isMobile ? seg.nom.slice(0, 5) : seg.nom.toUpperCase();
@@ -798,15 +755,15 @@ export default function TimelineCanvas() {
       }
       mctx.lineTo(mw, wavePoints[wavePoints.length - 1].y);
 
-      mctx.strokeStyle = 'rgba(20, 24, 33, 0.72)';
-      mctx.lineWidth = 2.2;
+      mctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      mctx.lineWidth = 2;
       mctx.stroke();
       mctx.restore();
     }
 
     if (cursorYearRef.current >= currentBounds.min && cursorYearRef.current <= currentBounds.max) {
       const curMiniX = yearToChapterMiniX(cursorYearRef.current, mw, activeChapter);
-      mctx.fillStyle = '#b45309';
+      mctx.fillStyle = '#5b4fe8';
       mctx.fillRect(curMiniX - 1.5, 0, 3, mh);
     }
 
@@ -820,9 +777,9 @@ export default function TimelineCanvas() {
     const cornerRadius = 16;
 
     mctx.save();
-    mctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
-    mctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
-    mctx.shadowBlur = 10;
+    mctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+    mctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    mctx.shadowBlur = 8;
     mctx.shadowOffsetY = 2;
 
     mctx.beginPath();
@@ -834,11 +791,11 @@ export default function TimelineCanvas() {
     mctx.fill();
 
     mctx.shadowColor = 'transparent';
-    mctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    mctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
     mctx.lineWidth = 1.8;
     mctx.stroke();
 
-    mctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    mctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
     mctx.beginPath();
     mctx.arc(left + 8, topY + selH / 2, 4.5, 0, Math.PI * 2);
     mctx.fill();
@@ -858,7 +815,7 @@ export default function TimelineCanvas() {
     mctx.restore();
   };
 
-  const HEADER_H = 46;
+  const HEADER_H = 56;
 
   const updateSizesAndDraw = () => {
     if (!canvasMainRef.current || !canvasMiniRef.current) return;
@@ -993,7 +950,7 @@ export default function TimelineCanvas() {
       if (!isMainDragging) return;
       const dx = e.clientX - dragStartX;
       const shift = (dx / cMain.clientWidth) * span;
-      smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift }, dx);
+      smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
     };
 
     const onMainWheel = (e) => {
@@ -1062,7 +1019,7 @@ export default function TimelineCanvas() {
         const dx = e.touches[0].clientX - dragStartX;
         const span = dragStartMax - dragStartMin;
         const shift = (dx / cMain.clientWidth) * span;
-        smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift }, dx);
+        smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
       } else if (e.touches.length === 2 && touchStartDist) {
         const x1 = e.touches[0].clientX;
         const x2 = e.touches[1].clientX;
@@ -1399,8 +1356,6 @@ export default function TimelineCanvas() {
     }
   };
 
-  const isLight = currentTheme === 'light';
-
   return (
     <div style={{
       position: 'fixed',
@@ -1408,7 +1363,7 @@ export default function TimelineCanvas() {
       left: 0,
       width: '100vw',
       height: '100dvh',
-      backgroundColor: 'transparent',
+      backgroundColor: '#eaf0f6',
       overflow: 'hidden',
       userSelect: 'none',
       fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
@@ -1417,43 +1372,45 @@ export default function TimelineCanvas() {
       flexDirection: 'column'
     }}>
 
-      {/* BANDEAU D'EN-TÊTE ÉPURÉ (46 px) */}
+      {/* DOCK FLOTTANT SUPÉRIEUR NEUMORPHIQUE */}
       <header style={{
         height: HEADER_H,
         minHeight: HEADER_H,
         width: '100%',
-        backgroundColor: isLight ? '#fbf9f5' : '#090d16',
-        borderBottom: isLight ? '1px solid #e7ded0' : '1px solid #1e293b',
+        backgroundColor: '#eaf0f6',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 12px 0 46px',
+        padding: '0 10px 0 44px',
         boxSizing: 'border-box',
-        zIndex: 30
+        zIndex: 30,
+        boxShadow: '0 4px 14px rgba(166, 180, 200, 0.35)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.6)'
       }}>
 
-        {/* Côté Gauche : Bouton Global + Ajouter */}
+        {/* GAUCHE : Bouton Global (Cadre/Viseur) & Ajout */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             type="button"
             onClick={handleResetToFullChapterView}
-            title="Afficher toute l'époque (dézoomer tout)"
+            title="Afficher toute l'époque (Vue globale)"
             style={{
-              padding: '4px 8px',
-              borderRadius: 6,
-              backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-              color: isLight ? '#57534e' : '#94a3b8',
-              border: 'none',
-              fontSize: 10,
-              fontWeight: 600,
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              backgroundColor: '#eaf0f6',
+              border: '1px solid rgba(255, 255, 255, 0.8)',
+              boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 3
+              justifyContent: 'center',
+              padding: 0
             }}
           >
-            <span>⤢</span>
-            <span style={{ display: 'inline-block' }}>Global</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#243242" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
+            </svg>
           </button>
 
           <button
@@ -1461,31 +1418,35 @@ export default function TimelineCanvas() {
             onClick={handleOpenCreateModal}
             title="Ajouter un événement"
             style={{
-              padding: '4px 9px',
-              borderRadius: 6,
-              backgroundColor: '#0284c7',
-              color: '#ffffff',
-              border: 'none',
-              fontSize: 11,
-              fontWeight: 600,
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              backgroundColor: '#eaf0f6',
+              border: '1px solid rgba(255, 255, 255, 0.8)',
+              boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
+              color: '#0284c7',
+              fontSize: 16,
+              fontWeight: 700,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 2
+              justifyContent: 'center',
+              padding: 0
             }}
           >
-            <span>+</span>
+            +
           </button>
         </div>
 
-        {/* Centre : Onglets de chapitres épurés */}
+        {/* CENTRE : Sélecteur de chapitres neumorphique en creux */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-          padding: 2,
-          borderRadius: 8,
-          gap: 2
+          backgroundColor: '#e2e9f0',
+          padding: 3,
+          borderRadius: 20,
+          gap: 3,
+          boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.6), inset -2px -2px 5px rgba(255, 255, 255, 0.9)'
         }}>
           {TIMELINE_CHAPTERS.map(ch => {
             const isActive = activeChapter === ch.id;
@@ -1495,14 +1456,15 @@ export default function TimelineCanvas() {
                 type="button"
                 onClick={() => handleSelectChapter(ch.id)}
                 style={{
-                  padding: '4px 8px',
-                  backgroundColor: isActive ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                  color: isActive ? (isLight ? '#0f172a' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                  border: 'none',
-                  borderRadius: 6,
+                  padding: '4px 9px',
+                  backgroundColor: isActive ? '#eaf0f6' : 'transparent',
+                  color: isActive ? '#243242' : '#718096',
+                  border: isActive ? '1px solid rgba(255, 255, 255, 0.7)' : 'none',
+                  borderRadius: 14,
                   fontSize: 10.5,
                   fontWeight: isActive ? 700 : 500,
                   cursor: 'pointer',
+                  boxShadow: isActive ? '3px 3px 7px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.95)' : 'none',
                   transition: 'all 0.15s ease'
                 }}
               >
@@ -1512,9 +1474,63 @@ export default function TimelineCanvas() {
           })}
         </div>
 
-        {/* Côté Droit : Toggle Vertical Carte ON/OFF */}
+        {/* DROITE : Relief, Play/Synchro et Toggle Carte */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 13 }} title="Affichage de la carte">🗺️</span>
+          <button
+            type="button"
+            onClick={() => setIsReliefActive(prev => !prev)}
+            title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              borderRadius: 16,
+              backgroundColor: '#eaf0f6',
+              border: '1px solid rgba(255, 255, 255, 0.8)',
+              boxShadow: isReliefActive
+                ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
+                : '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
+              cursor: 'pointer',
+              color: '#334155',
+              fontSize: 11,
+              fontWeight: 600
+            }}
+          >
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: isReliefActive ? '#10b981' : '#94a3b8',
+              boxShadow: isReliefActive ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none',
+              transition: 'background-color 0.2s ease'
+            }} />
+            <span>Relief</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRecalibrateTrigger(t => t + 1)}
+            title="Recalibrer / Resynchroniser la carte"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: '50%',
+              backgroundColor: '#eaf0f6',
+              border: '1px solid rgba(255, 255, 255, 0.8)',
+              boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#5b4fe8">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          </button>
+
           <div
             onClick={() => {
               setIsAtlasOpen(prev => {
@@ -1523,12 +1539,12 @@ export default function TimelineCanvas() {
                 return nextState;
               });
             }}
-            title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte (50%)"}
+            title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte"}
             style={{
-              width: 20,
-              height: 34,
-              backgroundColor: isAtlasOpen ? '#10b981' : (isLight ? '#d6cebf' : '#334155'),
-              borderRadius: 12,
+              width: 18,
+              height: 30,
+              backgroundColor: isAtlasOpen ? '#10b981' : '#d8e2ec',
+              borderRadius: 10,
               padding: 2,
               boxSizing: 'border-box',
               cursor: 'pointer',
@@ -1537,22 +1553,21 @@ export default function TimelineCanvas() {
               justifyContent: isAtlasOpen ? 'flex-start' : 'flex-end',
               alignItems: 'center',
               transition: 'background-color 0.2s ease',
-              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.18)'
             }}
           >
             <div style={{
-              width: 16,
-              height: 16,
+              width: 14,
+              height: 14,
               borderRadius: '50%',
               backgroundColor: '#ffffff',
               boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 9,
+              fontSize: 8,
               fontWeight: 800,
-              color: isAtlasOpen ? '#10b981' : '#94a3b8',
-              lineHeight: 1
+              color: isAtlasOpen ? '#10b981' : '#94a3b8'
             }}>
               {isAtlasOpen ? '✓' : ''}
             </div>
@@ -1573,7 +1588,7 @@ export default function TimelineCanvas() {
               left: 0,
               width: '100%',
               height: `${Math.round(splitRatio * 100)}%`,
-              borderBottom: '1px solid #e7ded0',
+              borderBottom: '1px solid rgba(166, 180, 200, 0.4)',
               backgroundColor: '#0f172a',
               zIndex: 10,
               overflow: 'hidden'
@@ -1587,11 +1602,13 @@ export default function TimelineCanvas() {
               onOpenDrawer={(evt) => handleOpenDrawer(evt)}
               onMapYearChange={() => {}}
               mapLayers={mapLayers}
+              isReliefProp={isReliefActive}
+              recalibrateTrigger={recalibrateTrigger}
             />
           </div>
         )}
 
-        {/* INDICATEUR DE PÉRIODE AFFINÉ */}
+        {/* INDICATEUR DE PÉRIODE */}
         <div
           style={{
             position: 'absolute',
@@ -1608,11 +1625,11 @@ export default function TimelineCanvas() {
             Période
           </span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#1e293b', fontVariantNumeric: 'tabular-nums' }}>
               {formatYear(viewRange.min)}
             </span>
-            <span style={{ fontSize: 10, color: '#a1a1aa' }}>—</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>—</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#1e293b', fontVariantNumeric: 'tabular-nums' }}>
               {formatYear(viewRange.max)}
             </span>
           </div>
@@ -1642,9 +1659,9 @@ export default function TimelineCanvas() {
             maxWidth: 980,
             height: 56,
             backgroundColor: '#1e232d',
-            border: '2px solid #2b323f',
+            border: '2px solid rgba(255, 255, 255, 0.4)',
             borderRadius: 28,
-            boxShadow: '0 12px 28px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.15)',
+            boxShadow: '0 10px 24px rgba(166, 180, 200, 0.45)',
             overflow: 'hidden',
             cursor: 'pointer',
             touchAction: 'none',
