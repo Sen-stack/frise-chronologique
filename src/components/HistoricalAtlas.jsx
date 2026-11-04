@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatYear } from '../utils/timelineMath.js';
@@ -136,9 +136,7 @@ function getClosestHistoricalFile(year) {
 
 function getClosestGeologySliceMa(year) {
   const currentMa = Math.abs(year) / 1000000;
-  if (currentMa > 450) {
-    return null;
-  }
+  if (currentMa > 450) return null;
 
   let closest = GEOLOGY_MA_SLICES[0];
   let minDiff = Math.abs(currentMa - closest);
@@ -193,11 +191,17 @@ function findEntityMeta(rawName) {
   return null;
 }
 
-function DynamicMapBridge({ boundingBoxCoords, isManualOverride, isGeologyMode, geologyLayerKey }) {
+function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract, isGeologyMode, geologyLayerKey }) {
   const map = useMap();
   const lastCenterKeyRef = useRef('');
   const lastGeologySliceRef = useRef(null);
   const debounceTimerRef = useRef(null);
+
+  // Détection native des interactions Leaflet (glisser au doigt sur mobile ou souris sur PC)
+  useMapEvents({
+    dragstart: () => onUserInteract(),
+    zoomstart: () => onUserInteract()
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -206,18 +210,15 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, isGeologyMode, 
     return () => clearTimeout(timer);
   }, [map]);
 
-  // Recadrage automatique adapté à la géologie et aux points d'événements
   useEffect(() => {
     if (isManualOverride) return;
 
-    // En mode géologique : cadrage automatique global sur la masse continentale
     if (isGeologyMode) {
       if (geologyLayerKey === lastGeologySliceRef.current) return;
       lastGeologySliceRef.current = geologyLayerKey;
 
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = setTimeout(() => {
-        // Cadrage mondial légèrement décalé vers le Sud (englobe le Gondwana)
         map.flyTo([-12.0, 20.0], 2, { animate: true, duration: 1.0 });
       }, 100);
 
@@ -226,7 +227,6 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, isGeologyMode, 
       };
     }
 
-    // En mode histoire : cadrage sur les repères actifs
     if (boundingBoxCoords.length === 0) return;
 
     const bounds = L.latLngBounds(boundingBoxCoords);
@@ -270,7 +270,7 @@ export default function HistoricalAtlas({
   onMapYearChange,
   mapLayers = { worldEmpires: true, subDivisions: true, tradeRoutes: false, markers: true }
 }) {
-  const [baseMapKey, setBaseMapKey] = useState('neutre');
+  const [isReliefActive, setIsReliefActive] = useState(false);
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [worldGeoJson, setWorldGeoJson] = useState(null);
   const [subDivisionsGeoJson, setSubDivisionsGeoJson] = useState(null);
@@ -279,7 +279,6 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  // Pré-chargement des 8 tranches géologiques
   useEffect(() => {
     GEOLOGY_MA_SLICES.forEach((ma) => {
       const cacheKey = `geo_ma_${ma}`;
@@ -521,118 +520,125 @@ export default function HistoricalAtlas({
     }
   };
 
-  const currentBaseMap = BASE_MAPS[baseMapKey] || BASE_MAPS.neutre;
+  const currentBaseMap = isReliefActive ? BASE_MAPS.topo : BASE_MAPS.neutre;
 
   return (
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
+      onTouchStart={(e) => {
+        if (!e.target.closest('#atlas-controls-block')) {
+          setIsManualOverride(true);
+        }
+      }}
       onMouseDown={(e) => {
-        if (!e.target.closest('#atlas-status-badge')) {
+        if (!e.target.closest('#atlas-controls-block')) {
           setIsManualOverride(true);
         }
       }}
       onWheel={(e) => {
-        if (!e.target.closest('#atlas-status-badge')) {
+        if (!e.target.closest('#atlas-controls-block')) {
           setIsManualOverride(true);
         }
       }}
     >
-      {/* BARRE D'ÉTAT SUPÉRIEURE ÉPURÉE */}
+      {/* BLOC DE CONTRÔLES HAUT-DROITE (ALIGNÉ SOUS LE TOGGLE CARTE) */}
       <div
-        id="atlas-status-badge"
+        id="atlas-controls-block"
         style={{
           position: 'absolute',
-          top: 8,
-          right: 8,
+          top: 10,
+          right: 12,
           zIndex: 1000,
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
           gap: 6,
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          backdropFilter: 'blur(8px)',
-          padding: '3px 8px',
-          borderRadius: 6,
-          border: '1px solid #e7ded0',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          fontSize: 10,
-          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-          whiteSpace: 'nowrap'
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
         }}
       >
-        <div style={{ display: 'flex', backgroundColor: '#ede7dc', padding: 2, borderRadius: 4, gap: 1 }}>
-          <button
-            type="button"
-            onClick={() => setBaseMapKey('topo')}
-            style={{
-              border: 'none',
-              padding: '2px 5px',
-              borderRadius: 3,
-              fontSize: 9,
-              fontWeight: 600,
-              cursor: 'pointer',
-              backgroundColor: baseMapKey === 'topo' ? '#ffffff' : 'transparent',
-              color: baseMapKey === 'topo' ? '#b45309' : '#78716c'
-            }}
-          >
+        {/* Toggle Relief */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(8px)',
+            padding: '3px 7px 3px 9px',
+            borderRadius: 16,
+            border: '1px solid #e7ded0',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
+          }}
+        >
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
             Relief
-          </button>
-          <button
-            type="button"
-            onClick={() => setBaseMapKey('neutre')}
+          </span>
+          <div
+            onClick={() => setIsReliefActive(prev => !prev)}
+            title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
             style={{
-              border: 'none',
-              padding: '2px 5px',
-              borderRadius: 3,
-              fontSize: 9,
-              fontWeight: 600,
+              width: 28,
+              height: 16,
+              backgroundColor: isReliefActive ? '#10b981' : '#cbd5e1',
+              borderRadius: 10,
+              padding: 2,
+              boxSizing: 'border-box',
               cursor: 'pointer',
-              backgroundColor: baseMapKey === 'neutre' ? '#ffffff' : 'transparent',
-              color: baseMapKey === 'neutre' ? '#b45309' : '#78716c'
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isReliefActive ? 'flex-end' : 'flex-start',
+              transition: 'background-color 0.2s ease'
             }}
           >
-            Neutre
-          </button>
+            <div style={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              backgroundColor: '#ffffff',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.25)'
+            }} />
+          </div>
         </div>
 
-        <span style={{ color: '#1c1917', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          {isGeologyMode ? (
-            activeMapSlice !== null ? `Continents : ${formatYear(activeMapSlice)}` : 'Terre primitive (pas de données)'
-          ) : (
-            activeMapSlice !== null ? formatYear(activeMapSlice) : '...'
-          )}
-        </span>
-
-        {isLoadingBorders && (
-          <span style={{ fontSize: 9, color: '#b45309', borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-            chargement...
-          </span>
-        )}
-
-        <span style={{ color: '#78716c', fontWeight: 500, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-          {activePoints.length} repères
-        </span>
-
+        {/* Bouton de synchronisation situé en dessous */}
         {isManualOverride ? (
           <button
             type="button"
             onClick={handleRecalibrate}
             style={{
-              padding: '2px 6px',
-              borderRadius: 4,
+              padding: '3px 8px',
+              borderRadius: 12,
               border: 'none',
               backgroundColor: '#b45309',
               color: '#ffffff',
-              fontWeight: 600,
-              fontSize: 9,
-              cursor: 'pointer'
+              fontWeight: 700,
+              fontSize: 9.5,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(180, 83, 9, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
             }}
           >
-            Recalibrer
+            <span>↻</span>
+            <span>Re-synch</span>
           </button>
         ) : (
-          <span style={{ fontSize: 9, color: '#15803d', fontWeight: 600, borderLeft: '1px solid #e7ded0', paddingLeft: 6 }}>
-            Sync
-          </span>
+          <div
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              backdropFilter: 'blur(6px)',
+              padding: '2px 7px',
+              borderRadius: 10,
+              border: '1px solid #e7ded0',
+              fontSize: 9,
+              color: '#15803d',
+              fontWeight: 700,
+              letterSpacing: '0.5px'
+            }}
+          >
+            ● Sync
+          </div>
         )}
       </div>
 
@@ -646,12 +652,13 @@ export default function HistoricalAtlas({
         <DynamicMapBridge
           boundingBoxCoords={combinedBoundsCoords}
           isManualOverride={isManualOverride}
+          onUserInteract={() => setIsManualOverride(true)}
           isGeologyMode={isGeologyMode}
           geologyLayerKey={activeMapSlice}
         />
 
         <TileLayer
-          key={baseMapKey}
+          key={isReliefActive ? 'topo' : 'neutre'}
           attribution={currentBaseMap.attribution}
           url={currentBaseMap.url}
           maxZoom={currentBaseMap.maxZoom}

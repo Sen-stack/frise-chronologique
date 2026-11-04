@@ -10,7 +10,7 @@ export const BAR_HEIGHT = 46;
 export const TIMELINE_CHAPTERS = [
   {
     id: "geologie",
-    label: "Temps géologique",
+    label: "Temps Géo",
     min: -4500000000,
     max: -300000,
     defaultView: { min: -4500000000, max: -300000 },
@@ -28,7 +28,7 @@ export const TIMELINE_CHAPTERS = [
   },
   {
     id: "histoire",
-    label: "Histoire & Civilisations",
+    label: "Écriture",
     min: -5000,
     max: 2026,
     defaultView: { min: -3500, max: 2026 },

@@ -33,10 +33,6 @@ export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
   const canvasMiniRef = useRef(null);
 
-  // Détection du mode mobile pour adapter la hauteur du bandeau
-  const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
-
-  // Chapitre temporel actif (par défaut : Histoire)
   const [activeChapter, setActiveChapter] = useState('histoire');
 
   const [viewRange, setViewRange] = useState({ min: -3500, max: 2026 });
@@ -685,21 +681,21 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // Curseur temporel interactif mobile
+    // Curseur temporel interactif mobile (Ligne fine avec Date dynamique uniquement)
     const cursorX = yearToX(cursorYearRef.current);
 
     if (cursorX >= -100 && cursorX <= w + 100) {
       ctx.save();
 
-      const grad = ctx.createLinearGradient(cursorX - 16, 0, cursorX + 16, 0);
+      const grad = ctx.createLinearGradient(cursorX - 12, 0, cursorX + 12, 0);
       grad.addColorStop(0, 'rgba(180, 83, 9, 0)');
-      grad.addColorStop(0.5, 'rgba(180, 83, 9, 0.18)');
+      grad.addColorStop(0.5, 'rgba(180, 83, 9, 0.15)');
       grad.addColorStop(1, 'rgba(180, 83, 9, 0)');
       ctx.fillStyle = grad;
-      ctx.fillRect(cursorX - 16, 0, 32, h);
+      ctx.fillRect(cursorX - 12, 0, 24, h);
 
       ctx.strokeStyle = '#b45309';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.2;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
       ctx.moveTo(cursorX, 0);
@@ -707,20 +703,21 @@ export default function TimelineCanvas() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      const labelText = `Carte : ${formatYear(cursorYearRef.current)}`;
-      ctx.font = '600 10px system-ui, sans-serif';
-      const labelW = ctx.measureText(labelText).width + 18;
+      // Badge allégé : juste la date
+      const labelText = formatYear(cursorYearRef.current);
+      ctx.font = '600 10.5px monospace, system-ui, sans-serif';
+      const labelW = ctx.measureText(labelText).width + 14;
       const badgeY = 8;
-      const badgeH = 20;
+      const badgeH = 18;
 
-      ctx.fillStyle = '#b45309';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = 'rgba(180, 83, 9, 0.92)';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetY = 1;
 
       ctx.beginPath();
       if (ctx.roundRect) {
-        ctx.roundRect(cursorX - labelW / 2, badgeY, labelW, badgeH, 5);
+        ctx.roundRect(cursorX - labelW / 2, badgeY, labelW, badgeH, 4);
       } else {
         ctx.rect(cursorX - labelW / 2, badgeY, labelW, badgeH);
       }
@@ -734,10 +731,10 @@ export default function TimelineCanvas() {
 
       ctx.fillStyle = '#b45309';
       ctx.beginPath();
-      ctx.arc(cursorX, barY - defaultHalfH, 4, 0, Math.PI * 2);
+      ctx.arc(cursorX, barY - defaultHalfH, 3.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.2;
       ctx.stroke();
 
       ctx.restore();
@@ -861,7 +858,7 @@ export default function TimelineCanvas() {
     mctx.restore();
   };
 
-  const getHeaderHeight = () => (isMobileScreen ? 76 : 44);
+  const HEADER_H = 46;
 
   const updateSizesAndDraw = () => {
     if (!canvasMainRef.current || !canvasMiniRef.current) return;
@@ -869,10 +866,7 @@ export default function TimelineCanvas() {
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
 
-    const isMob = totalW < 640;
-    const currentHeaderH = isMob ? 76 : 44;
-
-    const availableAreaH = totalH - currentHeaderH;
+    const availableAreaH = totalH - HEADER_H;
     const actualRatio = isAtlasOpen ? splitRatio : 0;
     const atlasH = Math.round(availableAreaH * actualRatio);
     const timelineAreaH = availableAreaH - atlasH;
@@ -928,12 +922,8 @@ export default function TimelineCanvas() {
   }, [isAtlasOpen, splitRatio]);
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsMobileScreen(window.innerWidth < 640);
-      updateSizesAndDraw();
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('resize', updateSizesAndDraw);
+    return () => window.removeEventListener('resize', updateSizesAndDraw);
   }, [isAtlasOpen, splitRatio]);
 
   useEffect(() => {
@@ -1410,7 +1400,6 @@ export default function TimelineCanvas() {
   };
 
   const isLight = currentTheme === 'light';
-  const headerHeight = getHeaderHeight();
 
   return (
     <div style={{
@@ -1428,344 +1417,148 @@ export default function TimelineCanvas() {
       flexDirection: 'column'
     }}>
 
-      {/* BANDEAU D'EN-TÊTE ADAPTATIF */}
+      {/* BANDEAU D'EN-TÊTE ÉPURÉ (46 px) */}
       <header style={{
-        height: headerHeight,
-        minHeight: headerHeight,
+        height: HEADER_H,
+        minHeight: HEADER_H,
         width: '100%',
         backgroundColor: isLight ? '#fbf9f5' : '#090d16',
         borderBottom: isLight ? '1px solid #e7ded0' : '1px solid #1e293b',
         display: 'flex',
-        flexDirection: isMobileScreen ? 'column' : 'row',
-        alignItems: isMobileScreen ? 'stretch' : 'center',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        padding: isMobileScreen ? '5px 8px 5px 44px' : '0 10px 0 46px',
-        gap: isMobileScreen ? 4 : 0,
+        padding: '0 12px 0 46px',
         boxSizing: 'border-box',
         zIndex: 30
       }}>
 
-        {/* --- CAS MOBILE : 2 LIGNES DÉDIÉES --- */}
-        {isMobileScreen ? (
-          <>
-            {/* Ligne 1 : Chapitres + Vue Globale + Ajouter */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 4 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-                padding: 2,
-                borderRadius: 6,
-                gap: 2,
-                overflowX: 'auto',
-                whiteSpace: 'nowrap'
-              }}>
-                {TIMELINE_CHAPTERS.map(ch => {
-                  const isActive = activeChapter === ch.id;
-                  return (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      onClick={() => handleSelectChapter(ch.id)}
-                      style={{
-                        padding: '3px 7px',
-                        backgroundColor: isActive ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                        color: isActive ? (isLight ? '#0f172a' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                        border: 'none',
-                        borderRadius: 4,
-                        fontSize: 10,
-                        fontWeight: isActive ? 700 : 500,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {ch.label}
-                    </button>
-                  );
-                })}
-              </div>
+        {/* Côté Gauche : Bouton Global + Ajouter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            onClick={handleResetToFullChapterView}
+            title="Afficher toute l'époque (dézoomer tout)"
+            style={{
+              padding: '4px 8px',
+              borderRadius: 6,
+              backgroundColor: isLight ? '#ede7dc' : '#1e293b',
+              color: isLight ? '#57534e' : '#94a3b8',
+              border: 'none',
+              fontSize: 10,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3
+            }}
+          >
+            <span>⤢</span>
+            <span style={{ display: 'inline-block' }}>Global</span>
+          </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  onClick={handleResetToFullChapterView}
-                  title="Afficher toute l'époque"
-                  style={{
-                    padding: '3px 6px',
-                    borderRadius: 5,
-                    backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-                    color: isLight ? '#57534e' : '#94a3b8',
-                    border: 'none',
-                    fontSize: 9.5,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2
-                  }}
-                >
-                  <span>⤢</span>
-                  <span>Global</span>
-                </button>
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            title="Ajouter un événement"
+            style={{
+              padding: '4px 9px',
+              borderRadius: 6,
+              backgroundColor: '#0284c7',
+              color: '#ffffff',
+              border: 'none',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2
+            }}
+          >
+            <span>+</span>
+          </button>
+        </div>
 
-                <button
-                  type="button"
-                  onClick={handleOpenCreateModal}
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: 5,
-                    backgroundColor: '#0284c7',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 3
-                  }}
-                >
-                  <span>+</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Ligne 2 : Boutons Atlas (Carte / 50% / Frise / Masquer) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-                padding: 2,
-                borderRadius: 5,
-                gap: 2
-              }}>
-                <button
-                  type="button"
-                  onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.58); }}
-                  style={{
-                    padding: '2px 7px',
-                    backgroundColor: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                    border: 'none',
-                    borderRadius: 3,
-                    fontSize: 9.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Carte
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.5); }}
-                  style={{
-                    padding: '2px 7px',
-                    backgroundColor: isAtlasOpen && splitRatio === 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: isAtlasOpen && splitRatio === 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                    border: 'none',
-                    borderRadius: 3,
-                    fontSize: 9.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  50%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.38); }}
-                  style={{
-                    padding: '2px 7px',
-                    backgroundColor: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                    border: 'none',
-                    borderRadius: 3,
-                    fontSize: 9.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Frise
-                </button>
-              </div>
-
+        {/* Centre : Onglets de chapitres épurés */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          backgroundColor: isLight ? '#ede7dc' : '#1e293b',
+          padding: 2,
+          borderRadius: 8,
+          gap: 2
+        }}>
+          {TIMELINE_CHAPTERS.map(ch => {
+            const isActive = activeChapter === ch.id;
+            return (
               <button
+                key={ch.id}
                 type="button"
-                onClick={() => setIsAtlasOpen(prev => !prev)}
-                style={{
-                  padding: '2px 7px',
-                  backgroundColor: 'transparent',
-                  color: isLight ? '#78716c' : '#94a3b8',
-                  border: isLight ? '1px solid #e7ded0' : '1px solid #334155',
-                  borderRadius: 4,
-                  fontSize: 9.5,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                {isAtlasOpen ? 'Masquer carte' : 'Afficher carte'}
-              </button>
-            </div>
-          </>
-        ) : (
-          /* --- CAS GRAND ÉCRAN (PC / TABLETTE) : 1 SEULE LIGNE --- */
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-                padding: 2,
-                borderRadius: 6,
-                gap: 2
-              }}>
-                <button
-                  type="button"
-                  onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.58); }}
-                  style={{
-                    padding: '3px 7px',
-                    backgroundColor: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: isAtlasOpen && splitRatio > 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                    border: 'none',
-                    borderRadius: 4,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Carte
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.5); }}
-                  style={{
-                    padding: '3px 7px',
-                    backgroundColor: isAtlasOpen && splitRatio === 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: isAtlasOpen && splitRatio === 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                    border: 'none',
-                    borderRadius: 4,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  50%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsAtlasOpen(true); setSplitRatio(0.38); }}
-                  style={{
-                    padding: '3px 7px',
-                    backgroundColor: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: isAtlasOpen && splitRatio < 0.5 ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                    border: 'none',
-                    borderRadius: 4,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Frise
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsAtlasOpen(prev => !prev)}
+                onClick={() => handleSelectChapter(ch.id)}
                 style={{
                   padding: '4px 8px',
-                  backgroundColor: 'transparent',
-                  color: isLight ? '#78716c' : '#94a3b8',
-                  border: isLight ? '1px solid #e7ded0' : '1px solid #334155',
-                  borderRadius: 6,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                {isAtlasOpen ? 'Masquer' : 'Afficher'}
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-                padding: 2,
-                borderRadius: 8,
-                gap: 2
-              }}>
-                {TIMELINE_CHAPTERS.map(ch => {
-                  const isActive = activeChapter === ch.id;
-                  return (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      onClick={() => handleSelectChapter(ch.id)}
-                      style={{
-                        padding: '4px 10px',
-                        backgroundColor: isActive ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                        color: isActive ? (isLight ? '#0f172a' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
-                        border: 'none',
-                        borderRadius: 6,
-                        fontSize: 11,
-                        fontWeight: isActive ? 700 : 500,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {ch.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleResetToFullChapterView}
-                title="Afficher toute l'époque (dézoomer tout)"
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  backgroundColor: isLight ? '#ede7dc' : '#1e293b',
-                  color: isLight ? '#57534e' : '#94a3b8',
+                  backgroundColor: isActive ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
+                  color: isActive ? (isLight ? '#0f172a' : '#ffffff') : (isLight ? '#57534e' : '#94a3b8'),
                   border: 'none',
-                  fontSize: 10,
-                  fontWeight: 600,
+                  borderRadius: 6,
+                  fontSize: 10.5,
+                  fontWeight: isActive ? 700 : 500,
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <span>⤢</span>
-                <span>Vue globale</span>
+                {ch.label}
               </button>
-            </div>
+            );
+          })}
+        </div>
 
-            <button
-              type="button"
-              onClick={handleOpenCreateModal}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 6,
-                backgroundColor: '#0284c7',
-                color: '#ffffff',
-                border: 'none',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4
-              }}
-            >
-              <span>+</span>
-              <span>Ajouter</span>
-            </button>
-          </>
-        )}
+        {/* Côté Droit : Toggle Vertical Carte ON/OFF */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13 }} title="Affichage de la carte">🗺️</span>
+          <div
+            onClick={() => {
+              setIsAtlasOpen(prev => {
+                const nextState = !prev;
+                if (nextState) setSplitRatio(0.5);
+                return nextState;
+              });
+            }}
+            title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte (50%)"}
+            style={{
+              width: 20,
+              height: 34,
+              backgroundColor: isAtlasOpen ? '#10b981' : (isLight ? '#d6cebf' : '#334155'),
+              borderRadius: 12,
+              padding: 2,
+              boxSizing: 'border-box',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: isAtlasOpen ? 'flex-start' : 'flex-end',
+              alignItems: 'center',
+              transition: 'background-color 0.2s ease',
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div style={{
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              backgroundColor: '#ffffff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 9,
+              fontWeight: 800,
+              color: isAtlasOpen ? '#10b981' : '#94a3b8',
+              lineHeight: 1
+            }}>
+              {isAtlasOpen ? '✓' : ''}
+            </div>
+          </div>
+        </div>
+
       </header>
 
       {/* ZONE CENTRALE */}
@@ -1798,12 +1591,12 @@ export default function TimelineCanvas() {
           </div>
         )}
 
-        {/* INDICATEUR DE PÉRIODE */}
+        {/* INDICATEUR DE PÉRIODE AFFINÉ */}
         <div
           style={{
             position: 'absolute',
-            top: isAtlasOpen ? `calc(${Math.round(splitRatio * 100)}% + 8px)` : 8,
-            left: 14,
+            top: isAtlasOpen ? `calc(${Math.round(splitRatio * 100)}% + 6px)` : 6,
+            left: 12,
             zIndex: 20,
             pointerEvents: 'none',
             display: 'flex',
@@ -1811,15 +1604,15 @@ export default function TimelineCanvas() {
             gap: 1
           }}
         >
-          <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#71717a' }}>
+          <span style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#71717a' }}>
             Période
           </span>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
               {formatYear(viewRange.min)}
             </span>
-            <span style={{ fontSize: 11, color: '#a1a1aa' }}>—</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontSize: 10, color: '#a1a1aa' }}>—</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: isLight ? '#09090b' : '#f8fafc', fontVariantNumeric: 'tabular-nums' }}>
               {formatYear(viewRange.max)}
             </span>
           </div>
@@ -1912,8 +1705,8 @@ export default function TimelineCanvas() {
           : selectedEvent.date_debut;
 
         const dynamicX = ((targetYear - viewRange.min) / span) * window.innerWidth;
-        const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - headerHeight) * splitRatio) : 0;
-        const absoluteTargetY = headerHeight + actualAtlasH + popupPos.y;
+        const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - HEADER_H) * splitRatio) : 0;
+        const absoluteTargetY = HEADER_H + actualAtlasH + popupPos.y;
 
         const debut = selectedEvent.date_debut;
         const fin = selectedEvent.date_fin ?? debut;
