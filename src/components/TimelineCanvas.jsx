@@ -145,19 +145,19 @@ export default function TimelineCanvas() {
 
   const smoothSetView = (nextTgt) => {
     const bounds = getActiveBounds();
-    let span = nextTgt.max - nextTgt.min;
-    const maxAllowedSpan = bounds.max - bounds.min;
+    const span = nextTgt.max - nextTgt.min;
 
-    if (span > maxAllowedSpan) {
-      span = maxAllowedSpan;
-      nextTgt = { min: bounds.min, max: bounds.max };
-    }
+    // Autorise un dépassement égal à la moitié de l'écran (span * 0.5)
+    // Cela permet d'amener l'extrémité de la frise jusqu'au centre de l'écran
+    const margin = span * 0.5;
+    const minAllowed = bounds.min - margin;
+    const maxAllowed = bounds.max + margin;
 
-    if (nextTgt.min < bounds.min) {
-      nextTgt = { min: bounds.min, max: bounds.min + span };
+    if (nextTgt.min < minAllowed) {
+      nextTgt = { min: minAllowed, max: minAllowed + span };
     }
-    if (nextTgt.max > bounds.max) {
-      nextTgt = { min: bounds.max - span, max: bounds.max };
+    if (nextTgt.max > maxAllowed) {
+      nextTgt = { min: maxAllowed - span, max: maxAllowed };
     }
 
     targetViewRef.current = nextTgt;
@@ -960,8 +960,21 @@ export default function TimelineCanvas() {
       const span = vMax - vMin;
       const mouseYear = vMin + (e.clientX / cMain.clientWidth) * span;
 
-      const nMin = mouseYear + (vMin - mouseYear) * factor;
-      const nMax = mouseYear + (vMax - mouseYear) * factor;
+      // Limite maximale de dézoom (environ 13000 ans, comme sur la capture)
+      const bounds = getActiveBounds();
+      const chapterSpan = bounds.max - bounds.min;
+      const maxSpan = Math.max(chapterSpan * 2.2, 13000);
+
+      let nMin = mouseYear + (vMin - mouseYear) * factor;
+      let nMax = mouseYear + (vMax - mouseYear) * factor;
+      let nextSpan = nMax - nMin;
+
+      if (nextSpan > maxSpan) {
+        const ratio = (mouseYear - vMin) / span;
+        nMin = mouseYear - maxSpan * ratio;
+        nMax = mouseYear + maxSpan * (1 - ratio);
+      }
+
       if (nMax - nMin > 1) {
         smoothSetView({ min: nMin, max: nMax });
       }
@@ -1027,7 +1040,13 @@ export default function TimelineCanvas() {
 
         if (currentDist > 0) {
           const scale = touchStartDist / currentDist;
-          const nextSpan = Math.max(1, touchStartSpan * scale);
+          const bounds = getActiveBounds();
+          const chapterSpan = bounds.max - bounds.min;
+          const maxSpan = Math.max(chapterSpan * 2.2, 13000);
+
+          let nextSpan = Math.max(1, touchStartSpan * scale);
+          if (nextSpan > maxSpan) nextSpan = maxSpan;
+
           const midX = (x1 + x2) / 2;
           const ratio = midX / cMain.clientWidth;
           smoothSetView({
