@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatYear } from '../utils/timelineMath.js';
 import WIKI_ENTITIES_MAP from '../data/wikiEntitiesMap.json';
+import GeologyVectorMap from './GeologyVectorMap.jsx';
 
 const BASE_MAPS = {
   topo: {
@@ -148,8 +149,6 @@ const HISTORICAL_YEAR_SLICES = [
   1600, 1700, 1715, 1783, 1800, 1815, 1880, 1900, 1914, 1920, 1938, 1945, 1994
 ];
 
-const GEOLOGY_MA_SLICES = [400, 300, 250, 200, 150, 100, 66, 20];
-
 function getClosestHistoricalFile(year) {
   let closest = HISTORICAL_YEAR_SLICES[0];
   let minDiff = Math.abs(year - closest);
@@ -167,22 +166,6 @@ function getClosestHistoricalFile(year) {
     : `world_${closest}.geojson`;
 
   return { year: closest, filename };
-}
-
-function getClosestGeologySliceMa(year) {
-  const currentMa = Math.abs(year) / 1000000;
-  if (currentMa > 450) return null;
-
-  let closest = GEOLOGY_MA_SLICES[0];
-  let minDiff = Math.abs(currentMa - closest);
-  for (const s of GEOLOGY_MA_SLICES) {
-    const diff = Math.abs(currentMa - s);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = s;
-    }
-  }
-  return closest;
 }
 
 const PALETTE = [
@@ -226,10 +209,9 @@ function findEntityMeta(rawName) {
   return null;
 }
 
-function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract, isGeologyMode, geologyLayerKey }) {
+function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract }) {
   const map = useMap();
   const lastCenterKeyRef = useRef('');
-  const lastGeologySliceRef = useRef(null);
   const debounceTimerRef = useRef(null);
 
   useMapEvents({
@@ -245,23 +227,7 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract,
   }, [map]);
 
   useEffect(() => {
-    if (isManualOverride) return;
-
-    if (isGeologyMode) {
-      if (geologyLayerKey === lastGeologySliceRef.current) return;
-      lastGeologySliceRef.current = geologyLayerKey;
-
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => {
-        map.flyTo([-12.0, 20.0], 2, { animate: true, duration: 1.0 });
-      }, 100);
-
-      return () => {
-        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      };
-    }
-
-    if (boundingBoxCoords.length === 0) return;
+    if (isManualOverride || boundingBoxCoords.length === 0) return;
 
     const bounds = L.latLngBounds(boundingBoxCoords);
     if (!bounds.isValid()) return;
@@ -290,7 +256,7 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract,
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [map, boundingBoxCoords, isManualOverride, isGeologyMode, geologyLayerKey]);
+  }, [map, boundingBoxCoords, isManualOverride]);
 
   return null;
 }
@@ -314,82 +280,19 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  useEffect(() => {
-    GEOLOGY_MA_SLICES.forEach((ma) => {
-      const cacheKey = `geo_ma_${ma}`;
-      if (!cacheRef.current[cacheKey]) {
-        fetch(`https://gws.gplates.org/reconstruct/coastlines/?time=${ma}&model=PALEOMAP`)
-          .then(res => res.ok ? res.json() : null)
-          .then(data => {
-            if (data) cacheRef.current[cacheKey] = data;
-          })
-          .catch(() => {});
-      }
-    });
-  }, []);
-
   const currentCenterYear = useMemo(() => {
     if (typeof targetDate === 'number') return targetDate;
     if (!viewRange) return 200;
     return Math.round((viewRange.min + viewRange.max) / 2);
   }, [targetDate, viewRange]);
 
-  const isGeologyMode = currentCenterYear < -10000;
+  // Détection du mode géologique (avant l'apparition de l'Homme moderne / préhistoire)
+  const isGeologyMode = currentCenterYear < -300000;
 
+  // Chargement des frontières historiques pour Leaflet (Histoire / Préhistoire uniquement)
   useEffect(() => {
     let isCurrentEffect = true;
-
-    if (isGeologyMode) {
-      const targetMa = getClosestGeologySliceMa(currentCenterYear);
-
-      if (targetMa === null) {
-        setWorldGeoJson(null);
-        setActiveMapSlice(null);
-        if (onMapYearChange) onMapYearChange(null);
-        setIsLoadingBorders(false);
-        return;
-      }
-
-      const targetYearEquivalent = -targetMa * 1000000;
-      const cacheKey = `geo_ma_${targetMa}`;
-
-      if (activeMapSlice === targetYearEquivalent && worldGeoJson) {
-        if (onMapYearChange) onMapYearChange(targetYearEquivalent);
-        return;
-      }
-
-      if (cacheRef.current[cacheKey]) {
-        setWorldGeoJson(cacheRef.current[cacheKey]);
-        setActiveMapSlice(targetYearEquivalent);
-        if (onMapYearChange) onMapYearChange(targetYearEquivalent);
-        setIsLoadingBorders(false);
-        return;
-      }
-
-      setIsLoadingBorders(true);
-      fetch(`https://gws.gplates.org/reconstruct/coastlines/?time=${targetMa}&model=PALEOMAP`)
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        })
-        .then(data => {
-          if (!isCurrentEffect) return;
-          cacheRef.current[cacheKey] = data;
-          setWorldGeoJson(data);
-          setActiveMapSlice(targetYearEquivalent);
-          if (onMapYearChange) onMapYearChange(targetYearEquivalent);
-          setIsLoadingBorders(false);
-        })
-        .catch(err => {
-          if (!isCurrentEffect) return;
-          console.error("Erreur GPlates:", err);
-          setIsLoadingBorders(false);
-        });
-
-      return () => {
-        isCurrentEffect = false;
-      };
-    }
+    if (isGeologyMode) return;
 
     const { year: targetYear, filename } = getClosestHistoricalFile(currentCenterYear);
 
@@ -443,6 +346,7 @@ export default function HistoricalAtlas({
     };
   }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange, isGeologyMode]);
 
+  // Chargement des subdivisions régionales antiques (Histoire uniquement)
   useEffect(() => {
     if (!mapLayers.subDivisions || isGeologyMode) {
       setSubDivisionsGeoJson(null);
@@ -538,13 +442,8 @@ export default function HistoricalAtlas({
   const handleRecalibrate = () => {
     setIsManualOverride(false);
     if (!mapRef.current) return;
-
-    if (isGeologyMode) {
-      mapRef.current.flyTo([-12.0, 20.0], 2, { duration: 1.0 });
-      return;
-    }
-
     if (combinedBoundsCoords.length === 0) return;
+
     const bounds = L.latLngBounds(combinedBoundsCoords);
     if (!bounds.isValid()) return;
 
@@ -555,7 +454,6 @@ export default function HistoricalAtlas({
     }
   };
 
-  // Recalibrage automatique déclenché par le bouton Play violet de la barre d'outils
   useEffect(() => {
     if (recalibrateTrigger > 0) {
       handleRecalibrate();
@@ -564,6 +462,19 @@ export default function HistoricalAtlas({
 
   const currentBaseMap = isReliefProp ? BASE_MAPS.topo : BASE_MAPS.neutre;
 
+  // BASCULE 1 : Temps géologique -> Planisphère vectoriel pur (zéro carte moderne)
+  if (isGeologyMode) {
+    return (
+      <GeologyVectorMap
+        currentYear={currentCenterYear}
+        events={activeEvents}
+        selectedEvent={selectedEvent}
+        onOpenDrawer={onOpenDrawer}
+      />
+    );
+  }
+
+  // BASCULE 2 : Histoire et Préhistoire -> Carte Leaflet habituelle intacte
   return (
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
@@ -593,8 +504,6 @@ export default function HistoricalAtlas({
           boundingBoxCoords={combinedBoundsCoords}
           isManualOverride={isManualOverride}
           onUserInteract={() => setIsManualOverride(true)}
-          isGeologyMode={isGeologyMode}
-          geologyLayerKey={activeMapSlice}
         />
 
         <TileLayer
@@ -608,31 +517,14 @@ export default function HistoricalAtlas({
           <GeoJSON
             key={`world-layer-${activeMapSlice || 'empty'}`}
             data={worldGeoJson}
-            style={() => {
-              if (isGeologyMode) {
-                return {
-                  color: '#15803d',
-                  weight: 1.5,
-                  opacity: 0.85,
-                  fillColor: '#16a34a',
-                  fillOpacity: 0.35
-                };
-              }
-              return {
-                color: '#b45309',
-                weight: 1.2,
-                opacity: 0.7,
-                fillColor: '#b45309',
-                fillOpacity: 0.18
-              };
-            }}
+            style={() => ({
+              color: '#b45309',
+              weight: 1.2,
+              opacity: 0.7,
+              fillColor: '#b45309',
+              fillOpacity: 0.18
+            })}
             onEachFeature={(feature, layer) => {
-              if (isGeologyMode) {
-                const label = `Masse continentale (${activeMapSlice ? formatYear(activeMapSlice) : ''})`;
-                layer.bindTooltip(`<strong>${label}</strong>`, { sticky: true });
-                return;
-              }
-
               const detectedName = extractFeatureName(feature?.properties);
               const meta = findEntityMeta(detectedName);
               const frenchLabel = meta?.fr ? meta.fr.replace(/_/g, ' ') : null;
@@ -679,7 +571,6 @@ export default function HistoricalAtlas({
           />
         )}
 
-        {/* Repères sous forme de pastilles neumorphiques douces avec halo pulsatif */}
         {mapLayers.markers && activePoints.map(pt => {
           const isSelected = selectedEvent && selectedEvent.id === pt.eventId;
           const markerColor = isSelected ? '#0284c7' : '#e11d48';
