@@ -494,6 +494,7 @@ export default function HistoricalAtlas({
         center={[-12.0, 20.0]}
         zoom={2}
         minZoom={1}
+        zoomControl={false}
         style={{ width: '100%', height: '100%' }}
       >
         <DynamicMapBridge
