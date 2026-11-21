@@ -266,6 +266,7 @@ export default function HistoricalAtlas({
   targetDate,
   events = [], 
   selectedEvent, 
+  onSelectEvent,
   onOpenDrawer, 
   onMapYearChange,
   mapLayers = { worldEmpires: true, subDivisions: true, tradeRoutes: false, markers: true },
@@ -286,10 +287,8 @@ export default function HistoricalAtlas({
     return Math.round((viewRange.min + viewRange.max) / 2);
   }, [targetDate, viewRange]);
 
-  // Détection du mode géologique (avant l'apparition de l'Homme moderne / préhistoire)
   const isGeologyMode = currentCenterYear < -300000;
 
-  // Chargement des frontières historiques pour Leaflet (Histoire / Préhistoire uniquement)
   useEffect(() => {
     let isCurrentEffect = true;
     if (isGeologyMode) return;
@@ -346,7 +345,6 @@ export default function HistoricalAtlas({
     };
   }, [currentCenterYear, activeMapSlice, worldGeoJson, onMapYearChange, isGeologyMode]);
 
-  // Chargement des subdivisions régionales antiques (Histoire uniquement)
   useEffect(() => {
     if (!mapLayers.subDivisions || isGeologyMode) {
       setSubDivisionsGeoJson(null);
@@ -462,7 +460,6 @@ export default function HistoricalAtlas({
 
   const currentBaseMap = isReliefProp ? BASE_MAPS.topo : BASE_MAPS.neutre;
 
-  // BASCULE 1 : Temps géologique -> Planisphère vectoriel pur (zéro carte moderne)
   if (isGeologyMode) {
     return (
       <GeologyVectorMap
@@ -474,7 +471,6 @@ export default function HistoricalAtlas({
     );
   }
 
-  // BASCULE 2 : Histoire et Préhistoire -> Carte Leaflet habituelle intacte
   return (
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
@@ -580,6 +576,11 @@ export default function HistoricalAtlas({
               key={pt.id}
               position={[pt.latitude, pt.longitude]}
               icon={createNeuMarkerIcon(markerColor, isSelected)}
+              eventHandlers={{
+                click: () => {
+                  if (onSelectEvent) onSelectEvent(pt.event);
+                }
+              }}
             >
               <Popup autoPan={true} autoPanPadding={[20, 20]} minWidth={220}>
                 <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", padding: 2 }}>

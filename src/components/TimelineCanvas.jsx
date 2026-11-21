@@ -147,8 +147,6 @@ export default function TimelineCanvas() {
     const bounds = getActiveBounds();
     const span = nextTgt.max - nextTgt.min;
 
-    // Autorise un dépassement égal à la moitié de l'écran (span * 0.5)
-    // Cela permet d'amener l'extrémité de la frise jusqu'au centre de l'écran
     const margin = span * 0.5;
     const minAllowed = bounds.min - margin;
     const maxAllowed = bounds.max + margin;
@@ -333,7 +331,6 @@ export default function TimelineCanvas() {
       const railRadius = totalH / 2;
 
       ctx.save();
-      // Fond creusé
       ctx.fillStyle = '#dfe6ee';
       ctx.beginPath();
       if (ctx.roundRect) {
@@ -343,7 +340,6 @@ export default function TimelineCanvas() {
       }
       ctx.fill();
 
-      // Ombre intérieure haute (sombre)
       ctx.save();
       ctx.clip();
       ctx.strokeStyle = 'rgba(166, 180, 200, 0.7)';
@@ -353,7 +349,6 @@ export default function TimelineCanvas() {
       ctx.lineTo(visibleX2, topY);
       ctx.stroke();
 
-      // Rehaut intérieur bas (lumière blanche)
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
       ctx.lineWidth = 3.5;
       ctx.beginPath();
@@ -361,7 +356,6 @@ export default function TimelineCanvas() {
       ctx.lineTo(visibleX2, topY + totalH);
       ctx.stroke();
 
-      // Trait d'axe central discret
       ctx.strokeStyle = 'rgba(166, 180, 200, 0.35)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 6]);
@@ -377,6 +371,8 @@ export default function TimelineCanvas() {
     // ========================================================
     // --- 2. CAPSULES FLOTTANTES D'EMPIRES ET DYNASTIES ---
     // ========================================================
+    const externalPeriodLabels = [];
+
     gravityPeriodes.forEach((p) => {
       const x1 = yearToX(p.date_debut);
       const x2 = yearToX(p.date_fin);
@@ -414,9 +410,8 @@ export default function TimelineCanvas() {
 
       const pillRadius = trackH / 2;
 
-      // Ombre portée flottante neumorphique sous la capsule
-      ctx.shadowColor = isSelected ? 'rgba(2, 132, 199, 0.4)' : 'rgba(166, 180, 200, 0.45)';
-      ctx.shadowBlur = isSelected ? 12 : 7;
+      ctx.shadowColor = isSelected ? 'rgba(2, 132, 199, 0.55)' : 'rgba(166, 180, 200, 0.45)';
+      ctx.shadowBlur = isSelected ? 14 : 7;
       ctx.shadowOffsetY = isSelected ? 4 : 3;
 
       if (p.forme === 'ligne') {
@@ -424,7 +419,7 @@ export default function TimelineCanvas() {
         const tickH = Math.max(6, trackH * 0.4);
 
         ctx.strokeStyle = baseColor;
-        ctx.lineWidth = isSelected ? 2.5 : 2;
+        ctx.lineWidth = isSelected ? 3 : 2;
         ctx.beginPath();
         ctx.moveTo(rX, lineY);
         ctx.lineTo(rX + rW, lineY);
@@ -436,7 +431,6 @@ export default function TimelineCanvas() {
 
         rectH = trackH;
       } else if (canDrop) {
-        // Jonction S fluide avec transition
         const actualTransW = Math.min(transitionW, remainingWAfterDrop * 0.8);
         const xTransStart = xSplit;
         const xTransEnd = xSplit + actualTransW;
@@ -472,17 +466,16 @@ export default function TimelineCanvas() {
         ctx.closePath();
 
         ctx.fillStyle = baseColor;
-        ctx.globalAlpha = p.opacite ?? 0.88;
+        ctx.globalAlpha = isSelected ? 1 : (p.opacite ?? 0.88);
         ctx.fill();
 
         ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)';
-        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.lineWidth = isSelected ? 2.5 : 1;
         ctx.stroke();
 
         rectTop = Math.min(yStart, yEnd, yStart + dir * trackH, yEnd + dir * trackH);
         rectH = Math.abs(yStart - yEnd) + trackH;
       } else {
-        // Capsule standard (Pill-shaped)
         ctx.beginPath();
         if (ctx.roundRect) {
           ctx.roundRect(rX, rectTop, rW, trackH, pillRadius);
@@ -491,11 +484,11 @@ export default function TimelineCanvas() {
         }
 
         ctx.fillStyle = baseColor;
-        ctx.globalAlpha = p.opacite ?? 0.88;
+        ctx.globalAlpha = isSelected ? 1 : (p.opacite ?? 0.88);
         ctx.fill();
 
         ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.7)';
-        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.lineWidth = isSelected ? 2.5 : 1;
         ctx.stroke();
       }
 
@@ -508,8 +501,19 @@ export default function TimelineCanvas() {
         evt: p
       });
 
-      // Libellé textuel dans la capsule
-      if (rW > 28) {
+      // Mesure de la place disponible pour le texte
+      const titreTexte = String(p.titre || 'Sans titre');
+      ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
+      const textWidth = ctx.measureText(titreTexte).width;
+
+      // Visibilité de la portion à l'écran (pour gérer le défilement quand la barre est très large)
+      const visibleLeft = Math.max(0, rX);
+      const visibleRight = Math.min(w, rX + rW);
+      const visibleBarW = Math.max(0, visibleRight - visibleLeft);
+
+      const fitsInside = p.forme !== 'ligne' && rW >= textWidth + 16 && visibleBarW >= Math.min(textWidth + 16, 48);
+
+      if (fitsInside) {
         ctx.save();
         ctx.shadowColor = 'transparent';
         ctx.beginPath();
@@ -519,8 +523,24 @@ export default function TimelineCanvas() {
         ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(p.titre, rX + 8, rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
+        const textX = Math.max(rX + 8, 8);
+        const clampedTextX = Math.min(textX, rX + rW - textWidth - 8);
+        ctx.fillText(titreTexte, Math.max(rX + 8, clampedTextX), rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
         ctx.restore();
+      } else {
+        // Capsule trop étroite ou forme "ligne" : on place le libellé en jalon au-dessus de la période
+        const anchorX = rX + rW / 2;
+        const anchorY = p.forme === 'ligne'
+          ? (isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25)
+          : rectTop;
+
+        externalPeriodLabels.push({
+          evt: p,
+          anchorX,
+          anchorY,
+          baseColor,
+          isSelected
+        });
       }
 
       ctx.restore();
@@ -548,7 +568,7 @@ export default function TimelineCanvas() {
     }
 
     // ========================================================
-    // --- 4. REPÈRES PONCTUELS ÉPURÉS (SOFT PINS) ---
+    // --- 4. REPÈRES PONCTUELS + PÉRIODES COMPACTES AU-DESSUS ---
     // ========================================================
     let minImportanceForText = 1;
     if (span > 5000) minImportanceForText = 4;
@@ -556,20 +576,38 @@ export default function TimelineCanvas() {
     else if (span > 250) minImportanceForText = 2;
 
     const pinTracks = [];
-    const sortedPonctuels = [...ponctuels].sort((a, b) => a.date_debut - b.date_debut);
 
-    sortedPonctuels.forEach((evt) => {
-      const x = yearToX(evt.date_debut);
+    // On fusionne les événements ponctuels et les périodes étroites/lignes pour éviter tout chevauchement de texte
+    const combinedPins = [
+      ...ponctuels.map(evt => ({
+        kind: 'point',
+        evt,
+        sortYear: evt.date_debut,
+        x: yearToX(evt.date_debut),
+        anchorY: barY - defaultHalfH,
+        color: evt.couleur || getItemStyle(evt).stroke || '#64748b'
+      })),
+      ...externalPeriodLabels.map(item => ({
+        kind: 'period',
+        evt: item.evt,
+        sortYear: item.evt.date_debut,
+        x: item.anchorX,
+        anchorY: item.anchorY,
+        color: item.baseColor
+      }))
+    ].sort((a, b) => a.sortYear - b.sortYear);
+
+    combinedPins.forEach((pin) => {
+      const { evt, x, anchorY, color, kind } = pin;
       if (x < -200 || x > w + 200) return;
 
       const titreTexte = String(evt.titre || 'Sans titre');
-      const style = getItemStyle(evt);
       const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (drawerEvent && drawerEvent.id === evt.id);
-      const shouldShowLabel = (evt.importance || 3) >= minImportanceForText || isSelected;
+      const shouldShowLabel = kind === 'period' || (evt.importance || 3) >= minImportanceForText || isSelected;
 
       ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
       const textWidth = ctx.measureText(titreTexte).width;
-      const labelW = shouldShowLabel ? textWidth + 16 : 16;
+      const labelW = shouldShowLabel ? textWidth + 18 : 16;
 
       let trackIndex = 0;
       while (pinTracks[trackIndex] && pinTracks[trackIndex] > x - 8) {
@@ -577,50 +615,62 @@ export default function TimelineCanvas() {
       }
       pinTracks[trackIndex] = x + labelW;
 
-      const baseStem = isMobile ? 22 : 36;
-      const stepStem = isMobile ? 18 : 30;
+      const baseStem = isMobile ? 22 : 34;
+      const stepStem = isMobile ? 20 : 30;
       const decalageY = baseStem + (trackIndex % 5) * stepStem;
-      const yT = (barY - defaultHalfH) - decalageY;
+      const topLimit = (barY - defaultHalfH) - decalageY;
+      const yT = Math.min(topLimit, anchorY - 18);
 
-      const pinColor = isSelected ? '#0284c7' : (evt.couleur || style.stroke || '#64748b');
+      const pinColor = isSelected ? '#0284c7' : color;
 
       ctx.save();
-      // Tige
-      ctx.strokeStyle = isSelected ? pinColor : 'rgba(166, 180, 200, 0.7)';
-      ctx.lineWidth = isSelected ? 1.5 : 1;
+      // Tige reliant la période (ou le rail) au libellé au-dessus
+      ctx.strokeStyle = isSelected ? pinColor : 'rgba(148, 163, 184, 0.75)';
+      ctx.lineWidth = isSelected ? 2 : 1.1;
       ctx.beginPath();
-      ctx.moveTo(x, barY - defaultHalfH);
+      ctx.moveTo(x, anchorY);
       ctx.lineTo(x, yT);
       ctx.stroke();
 
-      // Point bas
+      // Point d'ancrage sur la période / rail
       ctx.fillStyle = pinColor;
       ctx.beginPath();
-      ctx.arc(x, barY - defaultHalfH, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
+      ctx.arc(x, anchorY, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // Tête de jalon
+      if (isSelected) {
+        ctx.beginPath();
+        ctx.arc(x, yT, 8, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(2, 132, 199, 0.22)';
+        ctx.fill();
+        ctx.fillStyle = pinColor;
+      }
+
+      // Pastille haute du jalon
       ctx.beginPath();
-      ctx.arc(x, yT, isSelected ? 4.5 : 3.5, 0, Math.PI * 2);
+      ctx.arc(x, yT, isSelected ? 5 : 3.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = isSelected ? 1.5 : 1;
       ctx.stroke();
 
       if (shouldShowLabel) {
-        const anneeStr = evt.date_debut < 0 ? `${Math.abs(evt.date_debut)} BCE` : `${evt.date_debut} CE`;
+        const formatShortDate = (y) => (y < 0 ? `${Math.abs(y)} BCE` : `${y} CE`);
+        const anneeStr = kind === 'period'
+          ? `${formatShortDate(evt.date_debut)} — ${formatShortDate(evt.date_fin)}`
+          : formatShortDate(evt.date_debut);
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
-        ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
+        ctx.font = isMobile ? '600 9.5px monospace, sans-serif' : '600 10.5px monospace, sans-serif';
         ctx.fillStyle = pinColor;
         ctx.fillText(anneeStr, x + 8, yT - 1);
 
         ctx.textBaseline = 'top';
         ctx.font = isSelected
-          ? (isMobile ? '600 11px system-ui, sans-serif' : '600 12px system-ui, sans-serif')
-          : (isMobile ? '500 10px system-ui, sans-serif' : '500 11px system-ui, sans-serif');
-        ctx.fillStyle = '#1e293b';
+          ? (isMobile ? '700 11px system-ui, sans-serif' : '700 12px system-ui, sans-serif')
+          : (isMobile ? '600 10px system-ui, sans-serif' : '600 11px system-ui, sans-serif');
+        ctx.fillStyle = isSelected ? '#0284c7' : '#1e293b';
         ctx.fillText(titreTexte, x + 8, yT + 1);
       }
       ctx.restore();
@@ -643,7 +693,6 @@ export default function TimelineCanvas() {
     if (cursorX >= -100 && cursorX <= w + 100) {
       ctx.save();
 
-      // Ligne fine verticale
       ctx.strokeStyle = '#5b4fe8';
       ctx.lineWidth = 1.2;
       ctx.setLineDash([4, 4]);
@@ -653,7 +702,6 @@ export default function TimelineCanvas() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Badge pilule neumorphique pour la date
       const labelText = formatYear(cursorYearRef.current);
       ctx.font = '600 10.5px monospace, system-ui, sans-serif';
       const labelW = ctx.measureText(labelText).width + 16;
@@ -683,7 +731,6 @@ export default function TimelineCanvas() {
       ctx.textBaseline = 'middle';
       ctx.fillText(labelText, cursorX, badgeY + badgeH / 2);
 
-      // Pastille centrale sur le rail
       ctx.fillStyle = '#5b4fe8';
       ctx.beginPath();
       ctx.arc(cursorX, barY, 4, 0, Math.PI * 2);
@@ -960,7 +1007,6 @@ export default function TimelineCanvas() {
       const span = vMax - vMin;
       const mouseYear = vMin + (e.clientX / cMain.clientWidth) * span;
 
-      // Limite maximale de dézoom (environ 13000 ans, comme sur la capture)
       const bounds = getActiveBounds();
       const chapterSpan = bounds.max - bounds.min;
       const maxSpan = Math.max(chapterSpan * 2.2, 13000);
@@ -1235,7 +1281,7 @@ export default function TimelineCanvas() {
   };
 
   const handleOpenEditDrawer = (evt) => {
-    const target = evt || selectedEvent;
+    const target = evt || selectedEvent || drawerEvent;
     if (!target) return;
     setEditingTargetEvent(target);
     setIsEditDrawerOpen(true);
@@ -1375,6 +1421,30 @@ export default function TimelineCanvas() {
     }
   };
 
+  // Sélection depuis un marqueur de la carte
+  const handleSelectEventFromAtlas = (evt) => {
+    if (!evt) return;
+    setSelectedEvent(evt);
+    setAtlasFocusedEvent(evt);
+    if (isDrawerOpen) setDrawerEvent(evt);
+    if (isEditDrawerOpen) setEditingTargetEvent(evt);
+
+    const isPeriod = evt.date_fin !== null && evt.date_fin !== undefined && evt.date_fin !== '';
+    const centerYear = isPeriod ? (evt.date_debut + evt.date_fin) / 2 : evt.date_debut;
+
+    setPopupPos({ x: window.innerWidth / 2, y: 120 });
+
+    if (centerYear < viewRef.current.min || centerYear > viewRef.current.max) {
+      const span = targetViewRef.current.max - targetViewRef.current.min;
+      smoothSetView({
+        min: centerYear - span / 2,
+        max: centerYear + span / 2
+      });
+    }
+  };
+
+  const activeSelection = selectedEvent || drawerEvent;
+
   return (
     <div style={{
       position: 'fixed',
@@ -1407,7 +1477,7 @@ export default function TimelineCanvas() {
         borderBottom: '1px solid rgba(255, 255, 255, 0.6)'
       }}>
 
-        {/* GAUCHE : Bouton Global (Cadre/Viseur) & Ajout */}
+        {/* GAUCHE : Bouton Global, Ajout (+), Modifier et Supprimer */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             type="button"
@@ -1455,6 +1525,60 @@ export default function TimelineCanvas() {
           >
             +
           </button>
+
+          {activeSelection && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleOpenEditDrawer(activeSelection)}
+                title={`Modifier "${activeSelection.titre}"`}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: '#eaf0f6',
+                  border: '1px solid rgba(255, 255, 255, 0.8)',
+                  boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
+                  color: '#d97706',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                </svg>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteEvent(activeSelection)}
+                title={`Supprimer "${activeSelection.titre}"`}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: '#eaf0f6',
+                  border: '1px solid rgba(255, 255, 255, 0.8)',
+                  boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
+                  color: '#e11d48',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
 
         {/* CENTRE : Sélecteur de chapitres neumorphique en creux */}
@@ -1618,6 +1742,7 @@ export default function TimelineCanvas() {
               targetDate={timelineCursorYear}
               events={events}
               selectedEvent={atlasFocusedEvent || drawerEvent || selectedEvent}
+              onSelectEvent={handleSelectEventFromAtlas}
               onOpenDrawer={(evt) => handleOpenDrawer(evt)}
               onMapYearChange={() => {}}
               mapLayers={mapLayers}
