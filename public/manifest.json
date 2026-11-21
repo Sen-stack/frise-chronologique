@@ -1,0 +1,16 @@
+{
+  "name": "Chronos — Frise & Atlas Historique",
+  "short_name": "Chronos",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eaf0f6",
+  "theme_color": "#eaf0f6",
+  "icons": [
+    {
+      "src": "/logo_frise_chrono.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
