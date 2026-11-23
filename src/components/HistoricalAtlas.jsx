@@ -846,7 +846,7 @@ export default function HistoricalAtlas({
 
         {mapLayers.worldEmpires && worldGeoJson && (
           <GeoJSON
-            key={`world-layer-${activeMapSlice || 'empty'}`}
+            key={`world-layer-${activeMapSlice || 'empty'}-${isDrawingMode ? 'draw' : 'view'}`}
             data={worldGeoJson}
             interactive={!isDrawingMode}
             style={() => ({
@@ -857,6 +857,7 @@ export default function HistoricalAtlas({
               fillOpacity: 0.18
             })}
             onEachFeature={(feature, layer) => {
+              if (isDrawingMode) return;
               const detectedName = extractFeatureName(feature?.properties);
               const meta = findEntityMeta(detectedName);
               const frenchLabel = meta?.fr ? meta.fr.replace(/_/g, ' ') : null;
