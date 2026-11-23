@@ -2,26 +2,19 @@ import React, { useRef, useEffect, useState } from 'react';
 import { THEMES } from '../utils/themeConfig.js';
 import { supabase } from '../supabase.js';
 import {
-  PERIOD_SEGMENTS,
   DEFAULT_TAG_PALETTE,
   COLOR_PRESETS,
   GLOBAL_MIN,
   GLOBAL_MAX,
-  MINI_PAD,
-  HANDLE_WIDTH,
-  MINI_HEIGHT,
-  BAR_HEIGHT,
   TIMELINE_CHAPTERS,
-  CHAPTER_SEGMENTS,
-  getChapterSegments,
   yearToChapterMiniX,
   miniXToChapterYear,
   formatYear,
-  getTickInterval,
-  getAutoPeriod,
-  getItemStyle
+  getAutoPeriod
 } from '../utils/timelineMath.js';
+import { renderTimelineScene } from '../utils/timelineRenderer.js';
 
+import TimelineHeader from './TimelineHeader.jsx';
 import EventPopup from './EventPopup.jsx';
 import FilterDrawer from './FilterDrawer.jsx';
 import EventModal from './EventModal.jsx';
@@ -32,6 +25,7 @@ import HistoricalAtlas from './HistoricalAtlas.jsx';
 export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
   const canvasMiniRef = useRef(null);
+  const subBarRef = useRef(null);
 
   const [isMobileScreen, setIsMobileScreen] = useState(() => window.innerWidth < 768);
   const [activeChapter, setActiveChapter] = useState('histoire');
@@ -64,11 +58,9 @@ export default function TimelineCanvas() {
 
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isAtlasOpen, setIsAtlasOpen] = useState(true);
-
   const [isReliefActive, setIsReliefActive] = useState(false);
   const [recalibrateTrigger, setRecalibrateTrigger] = useState(0);
 
-  // États partagés pour la sous-barre de dessin
   const [drawingTerritoryEvent, setDrawingTerritoryEvent] = useState(null);
   const [drawUiState, setDrawUiState] = useState({
     shapesCount: 0,
@@ -91,8 +83,8 @@ export default function TimelineCanvas() {
   const handleToggleMapLayer = (layerKey) => {
     setMapLayers(prev => ({ ...prev, [layerKey]: !prev[layerKey] }));
   };
-  const [atlasFocusedEvent, setAtlasFocusedEvent] = useState(null);
 
+  const [atlasFocusedEvent, setAtlasFocusedEvent] = useState(null);
   const [timelineCursorYear, setTimelineCursorYear] = useState(200);
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -141,14 +133,11 @@ export default function TimelineCanvas() {
   const updateInertia = () => {
     const cur = viewRef.current;
     const tgt = targetViewRef.current;
-
     const diffMin = tgt.min - cur.min;
     const diffMax = tgt.max - cur.max;
 
     if (Math.abs(diffMin) > 0.05 || Math.abs(diffMax) > 0.05) {
-      const nextMin = cur.min + diffMin * 0.18;
-      const nextMax = cur.max + diffMax * 0.18;
-      setViewRange({ min: nextMin, max: nextMax });
+      setViewRange({ min: cur.min + diffMin * 0.18, max: cur.max + diffMax * 0.18 });
       animFrameRef.current = requestAnimationFrame(updateInertia);
     } else {
       setViewRange({ min: tgt.min, max: tgt.max });
@@ -159,17 +148,12 @@ export default function TimelineCanvas() {
   const smoothSetView = (nextTgt) => {
     const bounds = getActiveBounds();
     const span = nextTgt.max - nextTgt.min;
-
     const margin = span * 0.5;
     const minAllowed = bounds.min - margin;
     const maxAllowed = bounds.max + margin;
 
-    if (nextTgt.min < minAllowed) {
-      nextTgt = { min: minAllowed, max: minAllowed + span };
-    }
-    if (nextTgt.max > maxAllowed) {
-      nextTgt = { min: maxAllowed - span, max: maxAllowed };
-    }
+    if (nextTgt.min < minAllowed) nextTgt = { min: minAllowed, max: minAllowed + span };
+    if (nextTgt.max > maxAllowed) nextTgt = { min: maxAllowed - span, max: maxAllowed };
 
     targetViewRef.current = nextTgt;
     if (!animFrameRef.current) {
@@ -193,670 +177,36 @@ export default function TimelineCanvas() {
 
   const handleResetToFullChapterView = () => {
     const chapter = TIMELINE_CHAPTERS.find(c => c.id === activeChapterRef.current);
-    if (!chapter) return;
-    smoothSetView(chapter.defaultView);
+    if (chapter) smoothSetView(chapter.defaultView);
   };
 
   const eventsRef = useRef(events);
   useEffect(() => { eventsRef.current = events; }, [events]);
 
-  const filterRef = useRef({
-    mode: filterMode,
-    tags: selectedTags,
-    groups: selectedGroups,
-    customIds: customSelectedIds
-  });
+  const filterRef = useRef({ mode: filterMode, tags: selectedTags, groups: selectedGroups, customIds: customSelectedIds });
   useEffect(() => {
-    filterRef.current = {
-      mode: filterMode,
-      tags: selectedTags,
-      groups: selectedGroups,
-      customIds: customSelectedIds
-    };
+    filterRef.current = { mode: filterMode, tags: selectedTags, groups: selectedGroups, customIds: customSelectedIds };
   }, [filterMode, selectedTags, selectedGroups, customSelectedIds]);
 
   const hitboxesRef = useRef([]);
 
-  const computeGravityTracks = (periodesList) => {
-    const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - a.date_fin));
-    const occupiedTop = [];
-    const occupiedBottom = [];
-
-    return sorted.map((p, idx) => {
-      let side = p.cote ? p.cote : ((idx % 2 === 0) ? 'top' : 'bottom');
-      let tracks = side === 'top' ? occupiedTop : occupiedBottom;
-
-      if (p.gravite === false) {
-        let fixedLevel = 0;
-        while (tracks[fixedLevel] !== undefined && tracks[fixedLevel] > p.date_debut) {
-          fixedLevel++;
-        }
-        tracks[fixedLevel] = p.date_fin;
-        return { ...p, side, level: fixedLevel, dropYear: null };
-      }
-
-      let level = 0;
-      while (tracks[level] !== undefined && tracks[level] > p.date_debut) {
-        level++;
-      }
-
-      const altSide = side === 'top' ? 'bottom' : 'top';
-      const altTracks = altSide === 'top' ? occupiedTop : occupiedBottom;
-      let altLevel = 0;
-      while (altTracks[altLevel] !== undefined && altTracks[altLevel] > p.date_debut) {
-        altLevel++;
-      }
-
-      if (altLevel < level) {
-        side = altSide;
-        tracks = altTracks;
-        level = altLevel;
-      }
-
-      let dropYear = null;
-      if (level > 0 && tracks[level - 1] !== undefined && tracks[level - 1] > p.date_debut && tracks[level - 1] < p.date_fin) {
-        dropYear = tracks[level - 1];
-        tracks[level - 1] = p.date_fin;
-      }
-
-      tracks[level] = p.date_fin;
-      return { ...p, side, level, dropYear };
-    });
-  };
-
   const drawScene = () => {
-    const cMain = canvasMainRef.current;
-    const cMini = canvasMiniRef.current;
-    if (!cMain || !cMini) return;
-
-    const ctx = cMain.getContext('2d');
-    const mctx = cMini.getContext('2d');
-
-    const dpr = window.devicePixelRatio || 1;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const w = cMain.clientWidth;
-    const h = cMain.clientHeight;
-    const mw = cMini.clientWidth;
-    const mh = cMini.clientHeight;
-
-    if (w === 0 || h === 0 || mw === 0 || mh === 0) return;
-
-    const currentBounds = getActiveBounds();
-    const { min: vMin, max: vMax } = viewRef.current;
-    const span = vMax - vMin;
-    const yearToX = (year) => ((year - vMin) / span) * w;
-
-    ctx.fillStyle = '#eaf0f6';
-    ctx.fillRect(0, 0, w, h);
-    hitboxesRef.current = [];
-
-    const isMobile = w < 640;
-    const barY = Math.round(h * (isMobile ? 0.60 : 0.58));
-
-    const zoomFactor = Math.max(0, Math.min(1, (3000 - span) / 2900));
-    const trackH = Math.round((isMobile ? 18 : 22) + zoomFactor * (isMobile ? 6 : 10));
-    const basePadding = Math.round(6 + zoomFactor * 4);
-    const periodFontSize = Math.round(10.5 + zoomFactor * 2);
-
-    const defaultHalfH = Math.round((isMobile ? 18 : 22));
-
-    const xStart = yearToX(currentBounds.min);
-    const xEnd = yearToX(currentBounds.max);
-
-    const allEvents = eventsRef.current || [];
-    const activeFilter = filterRef.current;
-
-    const filteredList = allEvents.filter(evt => {
-      const debut = evt.date_debut;
-      const fin = evt.date_fin ?? debut;
-      if (fin < currentBounds.min || debut > currentBounds.max) return false;
-
-      if (activeFilter.mode === 'custom') {
-        return activeFilter.customIds.has(evt.id);
-      }
-      if (activeFilter.mode === 'groups') {
-        const group = (evt.groupe_id && typeof evt.groupe_id === 'string') ? evt.groupe_id.trim() : null;
-        return group ? activeFilter.groups.includes(group) : false;
-      }
-      const itemTags = Array.isArray(evt.tags) && evt.tags.length > 0 ? evt.tags : [evt.categorie || "Sans tag"];
-      return itemTags.some(tag => activeFilter.tags.includes(tag));
+    renderTimelineScene({
+      cMain: canvasMainRef.current,
+      cMini: canvasMiniRef.current,
+      currentBounds: getActiveBounds(),
+      viewRange: viewRef.current,
+      allEvents: eventsRef.current,
+      activeFilter: filterRef.current,
+      selectedEvent,
+      drawerEvent,
+      cursorYear: cursorYearRef.current,
+      activeChapter,
+      hitboxesRef
     });
-
-    const rawPeriodes = filteredList.filter(e => e.date_fin !== null && e.date_fin !== undefined && e.date_fin !== '');
-    const ponctuels = filteredList.filter(e => !e.date_fin);
-
-    const gravityPeriodes = computeGravityTracks(rawPeriodes);
-
-    const visibleX1 = Math.max(-60, xStart);
-    const visibleX2 = Math.min(w + 60, xEnd);
-    const visibleW = Math.max(0, visibleX2 - visibleX1);
-
-    // 1. RAIL EN CREUX NEUMORPHIQUE
-    if (visibleW > 0) {
-      const topY = barY - defaultHalfH;
-      const totalH = defaultHalfH * 2;
-      const railRadius = totalH / 2;
-
-      ctx.save();
-      ctx.fillStyle = '#dfe6ee';
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(visibleX1, topY, visibleW, totalH, railRadius);
-      } else {
-        ctx.rect(visibleX1, topY, visibleW, totalH);
-      }
-      ctx.fill();
-
-      ctx.save();
-      ctx.clip();
-      ctx.strokeStyle = 'rgba(166, 180, 200, 0.7)';
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.moveTo(visibleX1, topY);
-      ctx.lineTo(visibleX2, topY);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.moveTo(visibleX1, topY + totalH);
-      ctx.lineTo(visibleX2, topY + totalH);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(166, 180, 200, 0.35)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 6]);
-      ctx.beginPath();
-      ctx.moveTo(visibleX1, barY);
-      ctx.lineTo(visibleX2, barY);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.restore();
-    }
-
-    // 2. CAPSULES FLOTTANTES D'EMPIRES ET DYNASTIES
-    const externalPeriodLabels = [];
-
-    gravityPeriodes.forEach((p) => {
-      const x1 = yearToX(p.date_debut);
-      const x2 = yearToX(p.date_fin);
-      const rX = Math.min(x1, x2);
-      const rW = Math.max(8, Math.abs(x2 - x1));
-
-      if (rX + rW < -100 || rX > w + 100) return;
-
-      const style = getItemStyle(p);
-      const isSelected = (selectedEvent && selectedEvent.id === p.id) || (drawerEvent && drawerEvent.id === p.id);
-      const isTop = p.side === 'top';
-      const dir = isTop ? -1 : 1;
-
-      const transitionW = Math.max(16, trackH * 1.1);
-      const baseColor = p.couleur || style.stroke || '#0284c7';
-
-      ctx.save();
-
-      let rectTop = 0;
-      let rectH = trackH;
-      const yBase = barY + dir * (basePadding + defaultHalfH + p.level * (trackH + 6));
-      rectTop = isTop ? yBase - trackH : yBase;
-
-      let canDrop = false;
-      let xSplit = 0;
-      let remainingWAfterDrop = 0;
-
-      if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin && p.level > 0) {
-        xSplit = yearToX(p.dropYear);
-        remainingWAfterDrop = (rX + rW) - xSplit;
-        if (remainingWAfterDrop >= trackH) {
-          canDrop = true;
-        }
-      }
-
-      const pillRadius = trackH / 2;
-
-      ctx.shadowColor = isSelected ? 'rgba(2, 132, 199, 0.55)' : 'rgba(166, 180, 200, 0.45)';
-      ctx.shadowBlur = isSelected ? 14 : 7;
-      ctx.shadowOffsetY = isSelected ? 4 : 3;
-
-      if (p.forme === 'ligne') {
-        const lineY = isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25;
-        const tickH = Math.max(6, trackH * 0.4);
-
-        ctx.strokeStyle = baseColor;
-        ctx.lineWidth = isSelected ? 3 : 2;
-        ctx.beginPath();
-        ctx.moveTo(rX, lineY);
-        ctx.lineTo(rX + rW, lineY);
-        ctx.moveTo(rX, lineY - tickH / 2);
-        ctx.lineTo(rX, lineY + tickH / 2);
-        ctx.moveTo(rX + rW, lineY - tickH / 2);
-        ctx.lineTo(rX + rW, lineY + tickH / 2);
-        ctx.stroke();
-
-        rectH = trackH;
-      } else if (canDrop) {
-        const actualTransW = Math.min(transitionW, remainingWAfterDrop * 0.8);
-        const xTransStart = xSplit;
-        const xTransEnd = xSplit + actualTransW;
-
-        const targetLvl = p.level - 1;
-        const yStart = barY + dir * (basePadding + defaultHalfH + p.level * (trackH + 6));
-        const yEnd = barY + dir * (basePadding + defaultHalfH + targetLvl * (trackH + 6));
-
-        ctx.beginPath();
-        ctx.moveTo(rX + pillRadius, yStart + dir * trackH);
-        ctx.lineTo(xTransStart, yStart + dir * trackH);
-
-        ctx.bezierCurveTo(
-          xTransStart + actualTransW * 0.5, yStart + dir * trackH,
-          xTransStart + actualTransW * 0.5, yEnd + dir * trackH,
-          xTransEnd, yEnd + dir * trackH
-        );
-
-        ctx.lineTo(rX + rW - pillRadius, yEnd + dir * trackH);
-        ctx.arcTo(rX + rW, yEnd + dir * trackH, rX + rW, yEnd, pillRadius);
-        ctx.arcTo(rX + rW, yEnd, rX + rW - pillRadius, yEnd, pillRadius);
-
-        ctx.lineTo(xTransEnd, yEnd);
-        ctx.bezierCurveTo(
-          xTransStart + actualTransW * 0.5, yEnd,
-          xTransStart + actualTransW * 0.5, yStart,
-          xTransStart, yStart
-        );
-
-        ctx.lineTo(rX + pillRadius, yStart);
-        ctx.arcTo(rX, yStart, rX, yStart + dir * trackH, pillRadius);
-        ctx.arcTo(rX, yStart + dir * trackH, rX + pillRadius, yStart + dir * trackH, pillRadius);
-        ctx.closePath();
-
-        ctx.fillStyle = baseColor;
-        ctx.globalAlpha = isSelected ? 1 : (p.opacite ?? 0.88);
-        ctx.fill();
-
-        ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)';
-        ctx.lineWidth = isSelected ? 2.5 : 1;
-        ctx.stroke();
-
-        rectTop = Math.min(yStart, yEnd, yStart + dir * trackH, yEnd + dir * trackH);
-        rectH = Math.abs(yStart - yEnd) + trackH;
-      } else {
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(rX, rectTop, rW, trackH, pillRadius);
-        } else {
-          ctx.rect(rX, rectTop, rW, trackH);
-        }
-
-        ctx.fillStyle = baseColor;
-        ctx.globalAlpha = isSelected ? 1 : (p.opacite ?? 0.88);
-        ctx.fill();
-
-        ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.7)';
-        ctx.lineWidth = isSelected ? 2.5 : 1;
-        ctx.stroke();
-      }
-
-      hitboxesRef.current.push({
-        type: 'rect',
-        x: rX,
-        y: rectTop,
-        w: rW,
-        h: rectH,
-        evt: p
-      });
-
-      const titreTexte = String(p.titre || 'Sans titre');
-      ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
-      const textWidth = ctx.measureText(titreTexte).width;
-
-      const visibleLeft = Math.max(0, rX);
-      const visibleRight = Math.min(w, rX + rW);
-      const visibleBarW = Math.max(0, visibleRight - visibleLeft);
-
-      const fitsInside = p.forme !== 'ligne' && rW >= textWidth + 16 && visibleBarW >= Math.min(textWidth + 16, 48);
-
-      if (fitsInside) {
-        ctx.save();
-        ctx.shadowColor = 'transparent';
-        ctx.beginPath();
-        ctx.rect(rX + 4, rectTop, rW - 8, rectH);
-        ctx.clip();
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `600 ${periodFontSize}px system-ui, sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        const textX = Math.max(rX + 8, 8);
-        const clampedTextX = Math.min(textX, rX + rW - textWidth - 8);
-        ctx.fillText(titreTexte, Math.max(rX + 8, clampedTextX), rectTop + (isTop ? trackH / 2 : rectH - trackH / 2));
-        ctx.restore();
-      } else {
-        const anchorX = rX + rW / 2;
-        const anchorY = p.forme === 'ligne'
-          ? (isTop ? rectTop + trackH * 0.75 : rectTop + trackH * 0.25)
-          : rectTop;
-
-        externalPeriodLabels.push({
-          evt: p,
-          anchorX,
-          anchorY,
-          baseColor,
-          isSelected
-        });
-      }
-
-      ctx.restore();
-    });
-
-    // 3. GRADUATIONS DOUCES SUR LE FOND CLAIR
-    const interval = getTickInterval(span);
-    const firstTick = Math.ceil(vMin / interval) * interval;
-    ctx.fillStyle = '#64748b';
-    ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
-    ctx.textAlign = 'center';
-
-    for (let t = firstTick; t <= vMax; t += interval) {
-      if (t < currentBounds.min || t > currentBounds.max) continue;
-      const tx = yearToX(t);
-      ctx.strokeStyle = 'rgba(166, 180, 200, 0.6)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(tx, barY + defaultHalfH);
-      ctx.lineTo(tx, barY + defaultHalfH + 6);
-      ctx.stroke();
-      ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
-    }
-
-    // 4. REPÈRES PONCTUELS + PÉRIODES COMPACTES AU-DESSUS
-    let minImportanceForText = 1;
-    if (span > 5000) minImportanceForText = 4;
-    else if (span > 800) minImportanceForText = 3;
-    else if (span > 250) minImportanceForText = 2;
-
-    const pinTracks = [];
-
-    const combinedPins = [
-      ...ponctuels.map(evt => ({
-        kind: 'point',
-        evt,
-        sortYear: evt.date_debut,
-        x: yearToX(evt.date_debut),
-        anchorY: barY - defaultHalfH,
-        color: evt.couleur || getItemStyle(evt).stroke || '#64748b'
-      })),
-      ...externalPeriodLabels.map(item => ({
-        kind: 'period',
-        evt: item.evt,
-        sortYear: item.evt.date_debut,
-        x: item.anchorX,
-        anchorY: item.anchorY,
-        color: item.baseColor
-      }))
-    ].sort((a, b) => a.sortYear - b.sortYear);
-
-    combinedPins.forEach((pin) => {
-      const { evt, x, anchorY, color, kind } = pin;
-      if (x < -200 || x > w + 200) return;
-
-      const titreTexte = String(evt.titre || 'Sans titre');
-      const isSelected = (selectedEvent && selectedEvent.id === evt.id) || (drawerEvent && drawerEvent.id === evt.id);
-      const shouldShowLabel = kind === 'period' || (evt.importance || 3) >= minImportanceForText || isSelected;
-
-      ctx.font = isMobile ? '600 10px monospace, sans-serif' : '600 11px monospace, sans-serif';
-      const textWidth = ctx.measureText(titreTexte).width;
-      const labelW = shouldShowLabel ? textWidth + 18 : 16;
-
-      let trackIndex = 0;
-      while (pinTracks[trackIndex] && pinTracks[trackIndex] > x - 8) {
-        trackIndex++;
-      }
-      pinTracks[trackIndex] = x + labelW;
-
-      const baseStem = isMobile ? 22 : 34;
-      const stepStem = isMobile ? 20 : 30;
-      const decalageY = baseStem + (trackIndex % 5) * stepStem;
-      const topLimit = (barY - defaultHalfH) - decalageY;
-      const yT = Math.min(topLimit, anchorY - 18);
-
-      const pinColor = isSelected ? '#0284c7' : color;
-
-      ctx.save();
-      ctx.strokeStyle = isSelected ? pinColor : 'rgba(148, 163, 184, 0.75)';
-      ctx.lineWidth = isSelected ? 2 : 1.1;
-      ctx.beginPath();
-      ctx.moveTo(x, anchorY);
-      ctx.lineTo(x, yT);
-      ctx.stroke();
-
-      ctx.fillStyle = pinColor;
-      ctx.beginPath();
-      ctx.arc(x, anchorY, isSelected ? 3.5 : 2.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (isSelected) {
-        ctx.beginPath();
-        ctx.arc(x, yT, 8, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(2, 132, 199, 0.22)';
-        ctx.fill();
-        ctx.fillStyle = pinColor;
-      }
-
-      ctx.beginPath();
-      ctx.arc(x, yT, isSelected ? 5 : 3.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = isSelected ? 1.5 : 1;
-      ctx.stroke();
-
-      if (shouldShowLabel) {
-        const formatShortDate = (y) => (y < 0 ? `${Math.abs(y)} BCE` : `${y} CE`);
-        const anneeStr = kind === 'period'
-          ? `${formatShortDate(evt.date_debut)} — ${formatShortDate(evt.date_fin)}`
-          : formatShortDate(evt.date_debut);
-
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
-        ctx.font = isMobile ? '600 9.5px monospace, sans-serif' : '600 10.5px monospace, sans-serif';
-        ctx.fillStyle = pinColor;
-        ctx.fillText(anneeStr, x + 8, yT - 1);
-
-        ctx.textBaseline = 'top';
-        ctx.font = isSelected
-          ? (isMobile ? '700 11px system-ui, sans-serif' : '700 12px system-ui, sans-serif')
-          : (isMobile ? '600 10px system-ui, sans-serif' : '600 11px system-ui, sans-serif');
-        ctx.fillStyle = isSelected ? '#0284c7' : '#1e293b';
-        ctx.fillText(titreTexte, x + 8, yT + 1);
-      }
-      ctx.restore();
-
-      hitboxesRef.current.push({
-        type: 'rect',
-        x: x - 6,
-        y: yT - 14,
-        w: labelW + 10,
-        h: 30,
-        evt
-      });
-    });
-
-    // 5. SCRUBBER TEMPOREL DOUX NEUMORPHIQUE
-    const cursorX = yearToX(cursorYearRef.current);
-
-    if (cursorX >= -100 && cursorX <= w + 100) {
-      ctx.save();
-
-      ctx.strokeStyle = '#5b4fe8';
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(cursorX, 0);
-      ctx.lineTo(cursorX, h);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      const labelText = formatYear(cursorYearRef.current);
-      ctx.font = '600 10.5px monospace, system-ui, sans-serif';
-      const labelW = ctx.measureText(labelText).width + 16;
-      const badgeY = 8;
-      const badgeH = 20;
-
-      ctx.fillStyle = '#eaf0f6';
-      ctx.shadowColor = 'rgba(166, 180, 200, 0.5)';
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetY = 2;
-
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(cursorX - labelW / 2, badgeY, labelW, badgeH, 10);
-      } else {
-        ctx.rect(cursorX - labelW / 2, badgeY, labelW, badgeH);
-      }
-      ctx.fill();
-
-      ctx.shadowColor = 'transparent';
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.fillStyle = '#5b4fe8';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(labelText, cursorX, badgeY + badgeH / 2);
-
-      ctx.fillStyle = '#5b4fe8';
-      ctx.beginPath();
-      ctx.arc(cursorX, barY, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    // 6. MINIMAP BASSE NEUMORPHIQUE
-    mctx.clearRect(0, 0, mw, mh);
-
-    const activeSegments = getChapterSegments(activeChapter);
-
-    let curSegX = 0;
-    activeSegments.forEach((seg, i) => {
-      const segW = seg.ratio * mw;
-      mctx.fillStyle = seg.color;
-      mctx.fillRect(curSegX, 0, segW, mh);
-
-      if (i > 0) {
-        mctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        mctx.lineWidth = 1;
-        mctx.beginPath();
-        mctx.moveTo(curSegX, 0);
-        mctx.lineTo(curSegX, mh);
-        mctx.stroke();
-      }
-
-      mctx.fillStyle = '#ffffff';
-      mctx.font = isMobile ? '700 7.5px system-ui, sans-serif' : '700 8.5px system-ui, sans-serif';
-      mctx.textAlign = 'center';
-      const labelText = isMobile ? seg.nom.slice(0, 5) : seg.nom.toUpperCase();
-      mctx.fillText(labelText, curSegX + segW / 2, 12);
-
-      curSegX += segW;
-    });
-
-    const numBuckets = isMobile ? 12 : 24;
-    const densityBins = new Array(numBuckets).fill(0);
-    filteredList.forEach(evt => {
-      const yr = evt.date_debut;
-      const xPos = yearToChapterMiniX(yr, mw, activeChapter);
-      const binIdx = Math.max(0, Math.min(numBuckets - 1, Math.floor((xPos / mw) * numBuckets)));
-      densityBins[binIdx] += 1;
-    });
-
-    const maxDensity = Math.max(1, ...densityBins);
-    const wavePoints = densityBins.map((count, idx) => {
-      const px = (idx + 0.5) * (mw / numBuckets);
-      const normalizedH = Math.pow(count / maxDensity, 0.6) * (mh * 0.44);
-      return { x: px, y: mh - 8 - normalizedH };
-    });
-
-    if (wavePoints.length > 1) {
-      mctx.save();
-      mctx.beginPath();
-      mctx.moveTo(0, wavePoints[0].y);
-      mctx.lineTo(wavePoints[0].x, wavePoints[0].y);
-
-      for (let i = 0; i < wavePoints.length - 1; i++) {
-        const xc = (wavePoints[i].x + wavePoints[i + 1].x) / 2;
-        const yc = (wavePoints[i].y + wavePoints[i + 1].y) / 2;
-        mctx.quadraticCurveTo(wavePoints[i].x, wavePoints[i].y, xc, yc);
-      }
-      mctx.lineTo(mw, wavePoints[wavePoints.length - 1].y);
-
-      mctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-      mctx.lineWidth = 2;
-      mctx.stroke();
-      mctx.restore();
-    }
-
-    if (cursorYearRef.current >= currentBounds.min && cursorYearRef.current <= currentBounds.max) {
-      const curMiniX = yearToChapterMiniX(cursorYearRef.current, mw, activeChapter);
-      mctx.fillStyle = '#5b4fe8';
-      mctx.fillRect(curMiniX - 1.5, 0, 3, mh);
-    }
-
-    const vx1 = yearToChapterMiniX(vMin, mw, activeChapter);
-    const vx2 = yearToChapterMiniX(vMax, mw, activeChapter);
-    const left = Math.min(vx1, vx2);
-    const right = Math.max(vx1, vx2);
-    const bWidth = Math.max(64, right - left);
-    const topY = 6;
-    const selH = mh - 12;
-    const cornerRadius = 16;
-
-    mctx.save();
-    mctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
-    mctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-    mctx.shadowBlur = 8;
-    mctx.shadowOffsetY = 2;
-
-    mctx.beginPath();
-    if (mctx.roundRect) {
-      mctx.roundRect(left, topY, bWidth, selH, cornerRadius);
-    } else {
-      mctx.rect(left, topY, bWidth, selH);
-    }
-    mctx.fill();
-
-    mctx.shadowColor = 'transparent';
-    mctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-    mctx.lineWidth = 1.8;
-    mctx.stroke();
-
-    mctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    mctx.beginPath();
-    mctx.arc(left + 8, topY + selH / 2, 4.5, 0, Math.PI * 2);
-    mctx.fill();
-
-    mctx.beginPath();
-    mctx.arc(left + bWidth - 8, topY + selH / 2, 4.5, 0, Math.PI * 2);
-    mctx.fill();
-
-    if (bWidth > (isMobile ? 70 : 88)) {
-      const labelRange = `${formatYear(vMin)} — ${formatYear(vMax)}`;
-      mctx.fillStyle = '#1e293b';
-      mctx.font = isMobile ? '700 8.5px monospace, system-ui, sans-serif' : '700 9.5px monospace, system-ui, sans-serif';
-      mctx.textAlign = 'center';
-      mctx.textBaseline = 'middle';
-      mctx.fillText(labelRange, left + bWidth / 2, topY + selH / 2);
-    }
-    mctx.restore();
   };
 
   const HEADER_H = isMobileScreen ? 86 : 56;
-  const subBarRef = useRef(null);
 
   const updateSizesAndDraw = () => {
     setIsMobileScreen(window.innerWidth < 768);
@@ -878,10 +228,8 @@ export default function TimelineCanvas() {
 
     const miniRect = canvasMiniRef.current.getBoundingClientRect();
     const miniW = miniRect.width || Math.min(980, Math.round(totalW * 0.92));
-    const miniH = 56;
-
     canvasMiniRef.current.width = Math.round(miniW * dpr);
-    canvasMiniRef.current.height = Math.round(miniH * dpr);
+    canvasMiniRef.current.height = Math.round(56 * dpr);
 
     drawScene();
   };
@@ -910,7 +258,6 @@ export default function TimelineCanvas() {
 
         setAvailableTags(listTags);
         setSelectedTags(listTags);
-
         setAvailableGroups(listGroups);
         setSelectedGroups(listGroups);
       }
@@ -918,20 +265,14 @@ export default function TimelineCanvas() {
     chargerEvenements();
   }, []);
 
-  useEffect(() => {
-    updateSizesAndDraw();
-  }, [isAtlasOpen, splitRatio, drawingTerritoryEvent, drawUiState.isAddingLink]);
-
+  useEffect(() => { updateSizesAndDraw(); }, [isAtlasOpen, splitRatio, drawingTerritoryEvent, drawUiState.isAddingLink]);
   useEffect(() => {
     window.addEventListener('resize', updateSizesAndDraw);
     return () => window.removeEventListener('resize', updateSizesAndDraw);
   }, [isAtlasOpen, splitRatio, drawingTerritoryEvent]);
+  useEffect(() => { drawScene(); }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, splitRatio, timelineCursorYear, currentTheme, activeChapter]);
 
-  useEffect(() => {
-    drawScene();
-  }, [viewRange, events, selectedTags, selectedGroups, customSelectedIds, filterMode, selectedEvent, drawerEvent, isAtlasOpen, splitRatio, timelineCursorYear, currentTheme, activeChapter]);
-
-  // GESTION DU DRAG SUR LE CANVAS PRINCIPAL
+  // GESTION SOURIS / TACTILE DES CANVAS
   useEffect(() => {
     const cMain = canvasMainRef.current;
     const cMini = canvasMiniRef.current;
@@ -963,7 +304,6 @@ export default function TimelineCanvas() {
         isCursorDragging = true;
         return;
       }
-
       isMainDragging = true;
       dragStartX = e.clientX;
       dragStartMin = targetViewRef.current.min;
@@ -975,8 +315,8 @@ export default function TimelineCanvas() {
       const currentX = e.clientX - rect.left;
       const { min: vMin, max: vMax } = targetViewRef.current;
       const span = vMax - vMin;
-
       const curX = ((cursorYearRef.current - vMin) / span) * cMain.clientWidth;
+
       if (!isMainDragging && !isCursorDragging) {
         cMain.style.cursor = Math.abs(currentX - curX) <= 24 ? 'ew-resize' : 'grab';
       }
@@ -984,8 +324,7 @@ export default function TimelineCanvas() {
       if (isCursorDragging) {
         const bounds = getActiveBounds();
         const ratio = Math.max(0, Math.min(1, currentX / cMain.clientWidth));
-        const newYear = Math.round(vMin + ratio * span);
-        const clampedYear = Math.max(bounds.min, Math.min(bounds.max, newYear));
+        const clampedYear = Math.max(bounds.min, Math.min(bounds.max, Math.round(vMin + ratio * span)));
         setTimelineCursorYear(clampedYear);
         cursorYearRef.current = clampedYear;
         return;
@@ -1005,22 +344,16 @@ export default function TimelineCanvas() {
       const mouseYear = vMin + (e.clientX / cMain.clientWidth) * span;
 
       const bounds = getActiveBounds();
-      const chapterSpan = bounds.max - bounds.min;
-      const maxSpan = Math.max(chapterSpan * 2.2, 13000);
+      const maxSpan = Math.max((bounds.max - bounds.min) * 2.2, 13000);
 
       let nMin = mouseYear + (vMin - mouseYear) * factor;
       let nMax = mouseYear + (vMax - mouseYear) * factor;
-      let nextSpan = nMax - nMin;
-
-      if (nextSpan > maxSpan) {
+      if (nMax - nMin > maxSpan) {
         const ratio = (mouseYear - vMin) / span;
         nMin = mouseYear - maxSpan * ratio;
         nMax = mouseYear + maxSpan * (1 - ratio);
       }
-
-      if (nMax - nMin > 1) {
-        smoothSetView({ min: nMin, max: nMax });
-      }
+      if (nMax - nMin > 1) smoothSetView({ min: nMin, max: nMax });
     };
 
     const onTouchStart = (e) => {
@@ -1035,7 +368,6 @@ export default function TimelineCanvas() {
           isCursorDragging = true;
           return;
         }
-
         isMainDragging = true;
         dragStartX = e.touches[0].clientX;
         dragStartMin = targetViewRef.current.min;
@@ -1050,8 +382,7 @@ export default function TimelineCanvas() {
 
         const { min: vMin, max: vMax } = targetViewRef.current;
         touchStartSpan = vMax - vMin;
-        const midX = (x1 + x2) / 2;
-        touchStartCenterYear = vMin + (midX / cMain.clientWidth) * touchStartSpan;
+        touchStartCenterYear = vMin + (((x1 + x2) / 2) / cMain.clientWidth) * touchStartSpan;
       }
     };
 
@@ -1064,8 +395,7 @@ export default function TimelineCanvas() {
         const span = vMax - vMin;
         const bounds = getActiveBounds();
         const ratio = Math.max(0, Math.min(1, touchX / cMain.clientWidth));
-        const newYear = Math.round(vMin + ratio * span);
-        const clampedYear = Math.max(bounds.min, Math.min(bounds.max, newYear));
+        const clampedYear = Math.max(bounds.min, Math.min(bounds.max, Math.round(vMin + ratio * span)));
         setTimelineCursorYear(clampedYear);
         cursorYearRef.current = clampedYear;
         return;
@@ -1073,25 +403,17 @@ export default function TimelineCanvas() {
 
       if (e.touches.length === 1 && isMainDragging) {
         const dx = e.touches[0].clientX - dragStartX;
-        const span = dragStartMax - dragStartMin;
-        const shift = (dx / cMain.clientWidth) * span;
+        const shift = (dx / cMain.clientWidth) * (dragStartMax - dragStartMin);
         smoothSetView({ min: dragStartMin - shift, max: dragStartMax - shift });
       } else if (e.touches.length === 2 && touchStartDist) {
         const x1 = e.touches[0].clientX;
         const x2 = e.touches[1].clientX;
         const currentDist = Math.hypot(x1 - x2, e.touches[0].clientY - e.touches[1].clientY);
-
         if (currentDist > 0) {
-          const scale = touchStartDist / currentDist;
           const bounds = getActiveBounds();
-          const chapterSpan = bounds.max - bounds.min;
-          const maxSpan = Math.max(chapterSpan * 2.2, 13000);
-
-          let nextSpan = Math.max(1, touchStartSpan * scale);
-          if (nextSpan > maxSpan) nextSpan = maxSpan;
-
-          const midX = (x1 + x2) / 2;
-          const ratio = midX / cMain.clientWidth;
+          const maxSpan = Math.max((bounds.max - bounds.min) * 2.2, 13000);
+          const nextSpan = Math.min(maxSpan, Math.max(1, touchStartSpan * (touchStartDist / currentDist)));
+          const ratio = ((x1 + x2) / 2) / cMain.clientWidth;
           smoothSetView({
             min: touchStartCenterYear - nextSpan * ratio,
             max: touchStartCenterYear + nextSpan * (1 - ratio)
@@ -1117,27 +439,20 @@ export default function TimelineCanvas() {
 
     const onMainClick = (e) => {
       if (isCursorDragging) return;
-
       const rect = cMain.getBoundingClientRect();
       const cx = (e.clientX || (e.changedTouches && e.changedTouches[0].clientX)) - rect.left;
       const cy = (e.clientY || (e.changedTouches && e.changedTouches[0].clientY)) - rect.top;
 
-      const hit = [...hitboxesRef.current].reverse().find(h => {
-        if (h.type === 'circle') {
-          return Math.hypot(cx - h.x, cy - h.y) <= h.r;
-        } else if (h.type === 'rect') {
-          return cx >= h.x && cx <= h.x + h.w && cy >= h.y && cy <= h.y + h.h;
-        }
-        return false;
-      });
+      const hit = [...hitboxesRef.current].reverse().find(h =>
+        h.type === 'circle'
+          ? Math.hypot(cx - h.x, cy - h.y) <= h.r
+          : (cx >= h.x && cx <= h.x + h.w && cy >= h.y && cy <= h.y + h.h)
+      );
 
       if (hit) {
         setSelectedEvent(hit.evt);
         setAtlasFocusedEvent(hit.evt);
-        const targetX = hit.type === 'rect' ? hit.x + hit.w / 2 : hit.x;
-        const targetY = hit.y;
-        setPopupPos({ x: targetX, y: targetY });
-
+        setPopupPos({ x: hit.type === 'rect' ? hit.x + hit.w / 2 : hit.x, y: hit.y });
         if (isDrawerOpen) setDrawerEvent(hit.evt);
         if (isEditDrawerOpen) setEditingTargetEvent(hit.evt);
       } else {
@@ -1145,14 +460,9 @@ export default function TimelineCanvas() {
       }
     };
 
-    const getMiniClientX = (clientX) => {
-      const rect = cMini.getBoundingClientRect();
-      return clientX - rect.left;
-    };
-
     const onMiniStart = (clientX) => {
       const mw = cMini.clientWidth;
-      const cx = getMiniClientX(clientX);
+      const cx = clientX - cMini.getBoundingClientRect().left;
       const chId = activeChapterRef.current;
       const { min: vMin, max: vMax } = targetViewRef.current;
       const vx1 = yearToChapterMiniX(vMin, mw, chId);
@@ -1164,13 +474,10 @@ export default function TimelineCanvas() {
       miniStartMin = vMin;
       miniStartMax = vMax;
 
-      if (Math.abs(cx - left) <= 16) {
-        miniMode = 'left';
-      } else if (Math.abs(cx - right) <= 16) {
-        miniMode = 'right';
-      } else if (cx > left && cx < right) {
-        miniMode = 'move';
-      } else {
+      if (Math.abs(cx - left) <= 16) miniMode = 'left';
+      else if (Math.abs(cx - right) <= 16) miniMode = 'right';
+      else if (cx > left && cx < right) miniMode = 'move';
+      else {
         const clickedYear = miniXToChapterYear(cx, mw, chId);
         const currentSpan = vMax - vMin;
         smoothSetView({ min: clickedYear - currentSpan / 2, max: clickedYear + currentSpan / 2 });
@@ -1180,57 +487,36 @@ export default function TimelineCanvas() {
 
     const onMiniMove = (clientX) => {
       const mw = cMini.clientWidth;
-      const cx = getMiniClientX(clientX);
+      const cx = clientX - cMini.getBoundingClientRect().left;
       const chId = activeChapterRef.current;
       const targetYear = miniXToChapterYear(cx, mw, chId);
 
       if (miniMode === 'move') {
-        const startYear = miniXToChapterYear(miniDragStartX, mw, chId);
-        const shift = targetYear - startYear;
+        const shift = targetYear - miniXToChapterYear(miniDragStartX, mw, chId);
         smoothSetView({ min: miniStartMin + shift, max: miniStartMax + shift });
-      } else if (miniMode === 'left') {
-        if (targetViewRef.current.max - targetYear >= 5) {
-          smoothSetView({ min: targetYear, max: targetViewRef.current.max });
-        }
-      } else if (miniMode === 'right') {
-        if (targetYear - targetViewRef.current.min >= 5) {
-          smoothSetView({ min: targetViewRef.current.min, max: targetYear });
-        }
+      } else if (miniMode === 'left' && targetViewRef.current.max - targetYear >= 5) {
+        smoothSetView({ min: targetYear, max: targetViewRef.current.max });
+      } else if (miniMode === 'right' && targetYear - targetViewRef.current.min >= 5) {
+        smoothSetView({ min: targetViewRef.current.min, max: targetYear });
       }
     };
 
     const onMiniMouseDown = (e) => onMiniStart(e.clientX);
-    const onMiniMouseMove = (e) => {
-      if (miniMode) onMiniMove(e.clientX);
-    };
-
-    const onMiniTouchStart = (e) => {
-      if (e.touches.length > 0) onMiniStart(e.touches[0].clientX);
-    };
-    const onMiniTouchMove = (e) => {
-      e.preventDefault();
-      if (miniMode && e.touches.length > 0) onMiniMove(e.touches[0].clientX);
-    };
-
-    const onEnd = () => {
-      isMainDragging = false;
-      isCursorDragging = false;
-      miniMode = null;
-    };
+    const onMiniMouseMove = (e) => { if (miniMode) onMiniMove(e.clientX); };
+    const onMiniTouchStart = (e) => { if (e.touches.length > 0) onMiniStart(e.touches[0].clientX); };
+    const onMiniTouchMove = (e) => { e.preventDefault(); if (miniMode && e.touches.length > 0) onMiniMove(e.touches[0].clientX); };
+    const onEnd = () => { isMainDragging = false; isCursorDragging = false; miniMode = null; };
 
     cMain.addEventListener('mousedown', onMainMouseDown);
     window.addEventListener('mousemove', onMainMouseMove);
     cMain.addEventListener('wheel', onMainWheel, { passive: false });
     cMain.addEventListener('click', onMainClick);
-
     cMini.addEventListener('mousedown', onMiniMouseDown);
     window.addEventListener('mousemove', onMiniMouseMove);
     window.addEventListener('mouseup', onEnd);
-
     cMain.addEventListener('touchstart', onTouchStart, { passive: false });
     cMain.addEventListener('touchmove', onTouchMove, { passive: false });
     cMain.addEventListener('touchend', onTouchEnd);
-
     cMini.addEventListener('touchstart', onMiniTouchStart, { passive: false });
     cMini.addEventListener('touchmove', onMiniTouchMove, { passive: false });
     cMini.addEventListener('touchend', onEnd);
@@ -1240,21 +526,19 @@ export default function TimelineCanvas() {
       window.removeEventListener('mousemove', onMainMouseMove);
       cMain.removeEventListener('wheel', onMainWheel);
       cMain.removeEventListener('click', onMainClick);
-
       cMini.removeEventListener('mousedown', onMiniMouseDown);
       window.removeEventListener('mousemove', onMiniMouseMove);
       window.removeEventListener('mouseup', onEnd);
-
       cMain.removeEventListener('touchstart', onTouchStart);
       cMain.removeEventListener('touchmove', onTouchMove);
       cMain.removeEventListener('touchend', onTouchEnd);
-
       cMini.removeEventListener('touchstart', onMiniTouchStart);
       cMini.removeEventListener('touchmove', onMiniTouchMove);
       cMini.removeEventListener('touchend', onEnd);
     };
   }, [isEditDrawerOpen, activeChapter]);
 
+  // ACTIONS SUPABASE & MODALES
   const handleOpenCreateModal = () => {
     setFormError('');
     setIsRange(false);
@@ -1279,55 +563,34 @@ export default function TimelineCanvas() {
 
   const handleOpenEditDrawer = (evt) => {
     const target = evt || selectedEvent || drawerEvent;
-    if (!target) return;
-    setEditingTargetEvent(target);
-    setIsEditDrawerOpen(true);
+    if (target) { setEditingTargetEvent(target); setIsEditDrawerOpen(true); }
   };
 
   const handleOpenDrawer = (evt) => {
     const target = evt || selectedEvent;
-    if (!target) return;
-    setDrawerEvent(target);
-    setAtlasFocusedEvent(target);
-    setIsDrawerOpen(true);
-    setSelectedEvent(null);
-  };
-
-  const handleCloseDrawer = () => {
-    setIsDrawerOpen(false);
-    setDrawerEvent(null);
+    if (target) { setDrawerEvent(target); setAtlasFocusedEvent(target); setIsDrawerOpen(true); setSelectedEvent(null); }
   };
 
   const handleDeleteEvent = async (evt) => {
-    if (!evt) return;
-    const confirmDelete = window.confirm(`Voulez-vous vraiment supprimer "${evt.titre}" ?`);
-    if (!confirmDelete) return;
-
+    if (!evt || !window.confirm(`Voulez-vous vraiment supprimer "${evt.titre}" ?`)) return;
     const { error } = await supabase.from('evenements').delete().eq('id', evt.id);
-    if (error) {
-      alert("Erreur de suppression : " + error.message);
-    } else {
+    if (error) alert("Erreur de suppression : " + error.message);
+    else {
       setEvents(prev => prev.filter(e => e.id !== evt.id));
       setSelectedEvent(null);
-      if (drawerEvent && drawerEvent.id === evt.id) handleCloseDrawer();
-      if (editingTargetEvent && editingTargetEvent.id === evt.id) setIsEditDrawerOpen(false);
+      if (drawerEvent?.id === evt.id) { setIsDrawerOpen(false); setDrawerEvent(null); }
+      if (editingTargetEvent?.id === evt.id) setIsEditDrawerOpen(false);
     }
   };
 
   const handleSaveFromDrawer = async (eventId, payload) => {
-    const { data, error } = await supabase
-      .from('evenements')
-      .update(payload)
-      .eq('id', eventId)
-      .select();
-
-    if (error) {
-      alert("Erreur de modification : " + error.message);
-    } else if (data && data.length > 0) {
+    const { data, error } = await supabase.from('evenements').update(payload).eq('id', eventId).select();
+    if (error) alert("Erreur de modification : " + error.message);
+    else if (data?.[0]) {
       const updated = data[0];
       setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
       setSelectedEvent(updated);
-      if (drawerEvent && drawerEvent.id === updated.id) setDrawerEvent(updated);
+      if (drawerEvent?.id === updated.id) setDrawerEvent(updated);
       setIsEditDrawerOpen(false);
     }
   };
@@ -1335,76 +598,43 @@ export default function TimelineCanvas() {
   const handleStartDrawTerritory = (evt) => {
     const target = evt || selectedEvent || drawerEvent;
     if (!target) return;
-
-    if (drawingTerritoryEvent && drawingTerritoryEvent.id === target.id) {
-      setDrawingTerritoryEvent(null);
-      return;
-    }
-
-    if (!isAtlasOpen) {
-      setIsAtlasOpen(true);
-      setSplitRatio(0.5);
-    }
+    if (drawingTerritoryEvent?.id === target.id) { setDrawingTerritoryEvent(null); return; }
+    if (!isAtlasOpen) { setIsAtlasOpen(true); setSplitRatio(0.5); }
     setSelectedEvent(null);
     setIsDrawerOpen(false);
     setDrawingTerritoryEvent(target);
   };
 
   const handleSaveTerritory = async (eventId, geojsonPayload) => {
-    const { data, error } = await supabase
-      .from('evenements')
-      .update({ zone_geojson: geojsonPayload })
-      .eq('id', eventId)
-      .select();
-
-    if (error) {
-      alert("Erreur de sauvegarde du territoire : " + error.message);
-    } else if (data && data.length > 0) {
+    const { data, error } = await supabase.from('evenements').update({ zone_geojson: geojsonPayload }).eq('id', eventId).select();
+    if (error) alert("Erreur de sauvegarde du territoire : " + error.message);
+    else if (data?.[0]) {
       const updated = data[0];
       setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
-      if (drawerEvent && drawerEvent.id === updated.id) setDrawerEvent(updated);
-      if (selectedEvent && selectedEvent.id === updated.id) setSelectedEvent(updated);
+      if (drawerEvent?.id === updated.id) setDrawerEvent(updated);
+      if (selectedEvent?.id === updated.id) setSelectedEvent(updated);
       setDrawingTerritoryEvent(null);
     }
-  };
-
-  const handleDeleteTerritory = async (evt) => {
-    if (!evt) return;
-    await handleSaveTerritory(evt.id, null);
   };
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
-
-    if (!formData.titre.trim()) {
-      setFormError('Le titre est obligatoire.');
-      return;
-    }
+    if (!formData.titre.trim()) return setFormError('Le titre est obligatoire.');
 
     const startVal = Number(formData.anneeDebut);
-    if (isNaN(startVal) || formData.anneeDebut === '') {
-      setFormError('L’année de début doit être un nombre valide.');
-      return;
-    }
+    if (isNaN(startVal) || formData.anneeDebut === '') return setFormError('L’année de début doit être un nombre valide.');
     const calculatedStart = formData.ereDebut === 'BCE' ? -Math.abs(startVal) : startVal;
 
     let calculatedEnd = null;
     if (isRange) {
       const endVal = Number(formData.anneeFin);
-      if (isNaN(endVal) || formData.anneeFin === '') {
-        setFormError('L’année de fin doit être un nombre valide.');
-        return;
-      }
+      if (isNaN(endVal) || formData.anneeFin === '') return setFormError('L’année de fin doit être un nombre valide.');
       calculatedEnd = formData.ereFin === 'BCE' ? -Math.abs(endVal) : endVal;
-      if (calculatedEnd <= calculatedStart) {
-        setFormError('L’année de fin doit être strictement après l’année de début.');
-        return;
-      }
+      if (calculatedEnd <= calculatedStart) return setFormError('L’année de fin doit être strictement après l’année de début.');
     }
 
     setIsSubmitting(true);
-    const calculatedPeriod = getAutoPeriod(calculatedStart);
     const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
     const chosenGroup = formData.groupe_id ? formData.groupe_id.trim() : null;
 
@@ -1415,7 +645,7 @@ export default function TimelineCanvas() {
       date_fin: calculatedEnd,
       tags: chosenTags,
       categorie: chosenTags[0],
-      periode: calculatedPeriod,
+      periode: getAutoPeriod(calculatedStart),
       couleur: formData.couleur || null,
       importance: Number(formData.importance),
       description: null,
@@ -1428,34 +658,23 @@ export default function TimelineCanvas() {
       opacite: formData.opacite ?? 0.85
     };
 
-    const { data, error } = await supabase
-      .from('evenements')
-      .insert([payload])
-      .select();
-
+    const { data, error } = await supabase.from('evenements').insert([payload]).select();
     setIsSubmitting(false);
 
-    if (error) {
-      setFormError('Erreur d’enregistrement : ' + error.message);
-    } else if (data && data.length > 0) {
+    if (error) setFormError('Erreur d’enregistrement : ' + error.message);
+    else if (data?.[0]) {
       const created = data[0];
       setEvents(prev => [...prev, created]);
       setCustomSelectedIds(prev => new Set([...prev, created.id]));
       setSelectedEvent(created);
-
       if (chosenGroup && !availableGroups.includes(chosenGroup)) {
         setAvailableGroups(prev => [...prev, chosenGroup]);
         setSelectedGroups(prev => [...prev, chosenGroup]);
       }
-
       setIsCreateModalOpen(false);
-
       const centerYear = calculatedEnd ? (calculatedStart + calculatedEnd) / 2 : calculatedStart;
       const span = targetViewRef.current.max - targetViewRef.current.min;
-      smoothSetView({
-        min: centerYear - span / 2,
-        max: centerYear + span / 2
-      });
+      smoothSetView({ min: centerYear - span / 2, max: centerYear + span / 2 });
     }
   };
 
@@ -1468,21 +687,15 @@ export default function TimelineCanvas() {
 
     const isPeriod = evt.date_fin !== null && evt.date_fin !== undefined && evt.date_fin !== '';
     const centerYear = isPeriod ? (evt.date_debut + evt.date_fin) / 2 : evt.date_debut;
-
     setPopupPos({ x: window.innerWidth / 2, y: 120 });
 
     if (centerYear < viewRef.current.min || centerYear > viewRef.current.max) {
       const span = targetViewRef.current.max - targetViewRef.current.min;
-      smoothSetView({
-        min: centerYear - span / 2,
-        max: centerYear + span / 2
-      });
+      smoothSetView({ min: centerYear - span / 2, max: centerYear + span / 2 });
     }
   };
 
   const activeSelection = selectedEvent || drawerEvent || drawingTerritoryEvent;
-  const btnSize = isMobileScreen ? 28 : 32;
-  const drawColor = drawingTerritoryEvent?.couleur || '#0284c7';
 
   return (
     <div style={{
@@ -1500,745 +713,35 @@ export default function TimelineCanvas() {
       flexDirection: 'column'
     }}>
 
-      {/* DOCK FLOTTANT SUPÉRIEUR NEUMORPHIQUE */}
-      <header style={{
-        height: HEADER_H,
-        minHeight: HEADER_H,
-        width: '100%',
-        backgroundColor: '#eaf0f6',
-        display: 'flex',
-        flexDirection: isMobileScreen ? 'column' : 'row',
-        alignItems: 'center',
-        justifyContent: isMobileScreen ? 'center' : 'space-between',
-        gap: isMobileScreen ? 5 : 0,
-        padding: isMobileScreen ? '4px 8px 4px 40px' : '0 10px 0 44px',
-        boxSizing: 'border-box',
-        zIndex: 30,
-        boxShadow: drawingTerritoryEvent ? 'none' : '0 4px 14px rgba(166, 180, 200, 0.35)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.6)'
-      }}>
-
-        {isMobileScreen ? (
-          <>
-            <div style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <button
-                  type="button"
-                  onClick={handleResetToFullChapterView}
-                  title="Afficher toute l'époque (Vue globale)"
-                  style={{
-                    width: btnSize,
-                    height: btnSize,
-                    borderRadius: '50%',
-                    backgroundColor: '#eaf0f6',
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0
-                  }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#243242" strokeWidth="2.4" strokeLinecap="round">
-                    <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleOpenCreateModal}
-                  title="Ajouter un événement"
-                  style={{
-                    width: btnSize,
-                    height: btnSize,
-                    borderRadius: '50%',
-                    backgroundColor: '#eaf0f6',
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                    color: '#0284c7',
-                    fontSize: 15,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0
-                  }}
-                >
-                  +
-                </button>
-
-                {activeSelection && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditDrawer(activeSelection)}
-                      title={`Modifier "${activeSelection.titre}"`}
-                      style={{
-                        width: btnSize,
-                        height: btnSize,
-                        borderRadius: '50%',
-                        backgroundColor: '#eaf0f6',
-                        border: '1px solid rgba(255, 255, 255, 0.8)',
-                        boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                        color: '#d97706',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: 0
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 20h9" />
-                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                      </svg>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleStartDrawTerritory(activeSelection)}
-                      title={`Dessiner le territoire de "${activeSelection.titre}"`}
-                      style={{
-                        width: btnSize,
-                        height: btnSize,
-                        borderRadius: '50%',
-                        backgroundColor: drawingTerritoryEvent?.id === activeSelection.id ? '#e0f2fe' : '#eaf0f6',
-                        border: drawingTerritoryEvent?.id === activeSelection.id ? '1px solid #0284c7' : '1px solid rgba(255, 255, 255, 0.8)',
-                        boxShadow: drawingTerritoryEvent?.id === activeSelection.id
-                          ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
-                          : '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                        color: activeSelection.zone_geojson || drawingTerritoryEvent?.id === activeSelection.id ? '#0284c7' : '#0f766e',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: 0
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
-                      </svg>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteEvent(activeSelection)}
-                      title={`Supprimer "${activeSelection.titre}"`}
-                      style={{
-                        width: btnSize,
-                        height: btnSize,
-                        borderRadius: '50%',
-                        backgroundColor: '#eaf0f6',
-                        border: '1px solid rgba(255, 255, 255, 0.8)',
-                        boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                        color: '#e11d48',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: 0
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <button
-                  type="button"
-                  onClick={() => setIsReliefActive(prev => !prev)}
-                  title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 8px',
-                    borderRadius: 14,
-                    backgroundColor: '#eaf0f6',
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: isReliefActive
-                      ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
-                      : '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                    cursor: 'pointer',
-                    color: '#334155',
-                    fontSize: 10,
-                    fontWeight: 600
-                  }}
-                >
-                  <span style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: '50%',
-                    backgroundColor: isReliefActive ? '#10b981' : '#94a3b8'
-                  }} />
-                  <span>Relief</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRecalibrateTrigger(t => t + 1)}
-                  title="Recalibrer / Resynchroniser la carte"
-                  style={{
-                    width: btnSize,
-                    height: btnSize,
-                    borderRadius: '50%',
-                    backgroundColor: '#eaf0f6',
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0
-                  }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="#5b4fe8">
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                </button>
-
-                <div
-                  onClick={() => {
-                    setIsAtlasOpen(prev => {
-                      const nextState = !prev;
-                      if (nextState) setSplitRatio(0.5);
-                      return nextState;
-                    });
-                  }}
-                  title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte"}
-                  style={{
-                    width: 18,
-                    height: btnSize,
-                    backgroundColor: isAtlasOpen ? '#10b981' : '#d8e2ec',
-                    borderRadius: 10,
-                    padding: 2,
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: isAtlasOpen ? 'flex-start' : 'flex-end',
-                    alignItems: 'center',
-                    transition: 'background-color 0.2s ease',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.18)'
-                  }}
-                >
-                  <div style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: '50%',
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 8,
-                    fontWeight: 800,
-                    color: isAtlasOpen ? '#10b981' : '#94a3b8'
-                  }}>
-                    {isAtlasOpen ? '✓' : ''}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: '#e2e9f0',
-              padding: 3,
-              borderRadius: 16,
-              gap: 3,
-              boxSizing: 'border-box',
-              boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.6), inset -2px -2px 5px rgba(255, 255, 255, 0.9)'
-            }}>
-              {TIMELINE_CHAPTERS.map(ch => {
-                const isActive = activeChapter === ch.id;
-                return (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    onClick={() => handleSelectChapter(ch.id)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 6px',
-                      backgroundColor: isActive ? '#eaf0f6' : 'transparent',
-                      color: isActive ? '#243242' : '#718096',
-                      border: isActive ? '1px solid rgba(255, 255, 255, 0.7)' : 'none',
-                      borderRadius: 13,
-                      fontSize: 10,
-                      fontWeight: isActive ? 700 : 500,
-                      whiteSpace: 'nowrap',
-                      cursor: 'pointer',
-                      boxShadow: isActive ? '2px 2px 5px rgba(166, 180, 200, 0.5), -2px -2px 5px rgba(255, 255, 255, 0.95)' : 'none',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {ch.label}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                onClick={handleResetToFullChapterView}
-                title="Afficher toute l'époque (Vue globale)"
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  backgroundColor: '#eaf0f6',
-                  border: '1px solid rgba(255, 255, 255, 0.8)',
-                  boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0
-                }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#243242" strokeWidth="2.4" strokeLinecap="round">
-                  <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
-                </svg>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleOpenCreateModal}
-                title="Ajouter un événement"
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  backgroundColor: '#eaf0f6',
-                  border: '1px solid rgba(255, 255, 255, 0.8)',
-                  boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                  color: '#0284c7',
-                  fontSize: 16,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0
-                }}
-              >
-                +
-              </button>
-
-              {activeSelection && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditDrawer(activeSelection)}
-                    title={`Modifier "${activeSelection.titre}"`}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      backgroundColor: '#eaf0f6',
-                      border: '1px solid rgba(255, 255, 255, 0.8)',
-                      boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                      color: '#d97706',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: 0
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                    </svg>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleStartDrawTerritory(activeSelection)}
-                    title={`Dessiner le territoire de "${activeSelection.titre}"`}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      backgroundColor: drawingTerritoryEvent?.id === activeSelection.id ? '#e0f2fe' : '#eaf0f6',
-                      border: drawingTerritoryEvent?.id === activeSelection.id ? '1px solid #0284c7' : '1px solid rgba(255, 255, 255, 0.8)',
-                      boxShadow: drawingTerritoryEvent?.id === activeSelection.id
-                        ? 'inset 2px 2px 5px rgba(166, 180, 200, 0.65), inset -2px -2px 5px rgba(255, 255, 255, 0.9)'
-                        : '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                      color: activeSelection.zone_geojson || drawingTerritoryEvent?.id === activeSelection.id ? '#0284c7' : '#0f766e',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: 0
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-                      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
-                    </svg>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteEvent(activeSelection)}
-                    title={`Supprimer "${activeSelection.titre}"`}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      backgroundColor: '#eaf0f6',
-                      border: '1px solid rgba(255, 255, 255, 0.8)',
-                      boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                      color: '#e11d48',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: 0
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              backgroundColor: '#e2e9f0',
-              padding: 3,
-              borderRadius: 20,
-              gap: 3,
-              boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.6), inset -2px -2px 5px rgba(255, 255, 255, 0.9)'
-            }}>
-              {TIMELINE_CHAPTERS.map(ch => {
-                const isActive = activeChapter === ch.id;
-                return (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    onClick={() => handleSelectChapter(ch.id)}
-                    style={{
-                      padding: '4px 9px',
-                      backgroundColor: isActive ? '#eaf0f6' : 'transparent',
-                      color: isActive ? '#243242' : '#718096',
-                      border: isActive ? '1px solid rgba(255, 255, 255, 0.7)' : 'none',
-                      borderRadius: 14,
-                      fontSize: 10.5,
-                      fontWeight: isActive ? 700 : 500,
-                      cursor: 'pointer',
-                      boxShadow: isActive ? '3px 3px 7px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.95)' : 'none',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {ch.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button
-                type="button"
-                onClick={() => setIsReliefActive(prev => !prev)}
-                title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  padding: '4px 9px',
-                  borderRadius: 16,
-                  backgroundColor: '#eaf0f6',
-                  border: '1px solid rgba(255, 255, 255, 0.8)',
-                  boxShadow: isReliefActive
-                    ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
-                    : '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                  cursor: 'pointer',
-                  color: '#334155',
-                  fontSize: 11,
-                  fontWeight: 600
-                }}
-              >
-                <span style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  backgroundColor: isReliefActive ? '#10b981' : '#94a3b8',
-                  boxShadow: isReliefActive ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none',
-                  transition: 'background-color 0.2s ease'
-                }} />
-                <span>Relief</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setRecalibrateTrigger(t => t + 1)}
-                title="Recalibrer / Resynchroniser la carte"
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: '50%',
-                  backgroundColor: '#eaf0f6',
-                  border: '1px solid rgba(255, 255, 255, 0.8)',
-                  boxShadow: '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="#5b4fe8">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-              </button>
-
-              <div
-                onClick={() => {
-                  setIsAtlasOpen(prev => {
-                    const nextState = !prev;
-                    if (nextState) setSplitRatio(0.5);
-                    return nextState;
-                  });
-                }}
-                title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte"}
-                style={{
-                  width: 18,
-                  height: 30,
-                  backgroundColor: isAtlasOpen ? '#10b981' : '#d8e2ec',
-                  borderRadius: 10,
-                  padding: 2,
-                  boxSizing: 'border-box',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: isAtlasOpen ? 'flex-start' : 'flex-end',
-                  alignItems: 'center',
-                  transition: 'background-color 0.2s ease',
-                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.18)'
-                }}
-              >
-                <div style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: '50%',
-                  backgroundColor: '#ffffff',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 8,
-                  fontWeight: 800,
-                  color: isAtlasOpen ? '#10b981' : '#94a3b8'
-                }}>
-                  {isAtlasOpen ? '✓' : ''}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-      </header>
-
-      {/* SOUS-BARRE DE DESSIN SOUS LE BANDEAU SUPÉRIEUR (NE MASQUE PAS LA CARTE) */}
-      {drawingTerritoryEvent && (
-        <div
-          ref={subBarRef}
-          style={{
-            width: '100%',
-            backgroundColor: '#f8fafc',
-            borderBottom: `1.5px solid ${drawColor}`,
-            padding: isMobileScreen ? '6px 10px' : '6px 16px',
-            boxSizing: 'border-box',
-            zIndex: 28,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)'
-          }}
-        >
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 6
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-              <span style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                backgroundColor: drawColor,
-                flexShrink: 0
-              }} />
-              <span style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#1c1917',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: isMobileScreen ? '48vw' : '300px'
-              }}>
-                {drawingTerritoryEvent.titre}
-              </span>
-              <span style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: '#64748b',
-                whiteSpace: 'nowrap'
-              }}>
-                ({drawUiState.shapesCount} forme{drawUiState.shapesCount > 1 ? 's' : ''})
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              {drawUiState.canValidateShape && (
-                <button
-                  type="button"
-                  onClick={() => drawUiState.actions?.validateShape()}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: `1px solid ${drawColor}`,
-                    backgroundColor: '#f0f9ff',
-                    color: drawColor,
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  + Forme
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => drawUiState.actions?.toggleAddLink()}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: drawUiState.isAddingLink ? '#e0f2fe' : '#ffffff',
-                  color: '#0284c7',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                + Lien ({drawUiState.linksCount})
-              </button>
-
-              {drawUiState.canUndo && (
-                <button
-                  type="button"
-                  onClick={() => drawUiState.actions?.undoPoint()}
-                  title="Annuler le dernier point"
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    color: '#475569',
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Annuler pt
-                </button>
-              )}
-
-              {drawUiState.canClear && (
-                <button
-                  type="button"
-                  onClick={() => drawUiState.actions?.clearAll()}
-                  title="Tout effacer"
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: '1px solid #fecaca',
-                    backgroundColor: '#fff1f2',
-                    color: '#e11d48',
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Effacer
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => drawUiState.actions?.save()}
-                disabled={drawUiState.isSaving}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  border: 'none',
-                  backgroundColor: '#15803d',
-                  color: '#ffffff',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                {drawUiState.isSaving ? '...' : 'Enregistrer'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDrawingTerritoryEvent(null)}
-                title="Fermer le mode dessin"
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: '#ffffff',
-                  color: '#64748b',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          {/* Zone d'ajout et affichage des liens dans la sous-barre */}
-          {drawUiState.linksBarContent}
-        </div>
-      )}
+      <TimelineHeader
+        headerHeight={HEADER_H}
+        isMobileScreen={isMobileScreen}
+        activeChapter={activeChapter}
+        onSelectChapter={handleSelectChapter}
+        onResetFullView={handleResetToFullChapterView}
+        onOpenCreateModal={handleOpenCreateModal}
+        activeSelection={activeSelection}
+        onOpenEditDrawer={handleOpenEditDrawer}
+        onStartDrawTerritory={handleStartDrawTerritory}
+        onDeleteEvent={handleDeleteEvent}
+        drawingTerritoryEvent={drawingTerritoryEvent}
+        onCancelDrawing={() => setDrawingTerritoryEvent(null)}
+        drawUiState={drawUiState}
+        subBarRef={subBarRef}
+        isReliefActive={isReliefActive}
+        onToggleRelief={() => setIsReliefActive(prev => !prev)}
+        onRecalibrate={() => setRecalibrateTrigger(t => t + 1)}
+        isAtlasOpen={isAtlasOpen}
+        onToggleAtlas={() => setIsAtlasOpen(prev => {
+          const nextState = !prev;
+          if (nextState) setSplitRatio(0.5);
+          return nextState;
+        })}
+      />
 
       {/* ZONE CENTRALE */}
       <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
 
-        {/* ATLAS */}
         {isAtlasOpen && (
           <div
             style={{
@@ -2272,7 +775,6 @@ export default function TimelineCanvas() {
           </div>
         )}
 
-        {/* INDICATEUR DE PÉRIODE */}
         <div
           style={{
             position: 'absolute',
@@ -2299,7 +801,6 @@ export default function TimelineCanvas() {
           </div>
         </div>
 
-        {/* CANVAS DE LA FRISE */}
         <div style={{
           position: 'absolute',
           top: isAtlasOpen ? `${Math.round(splitRatio * 100)}%` : 0,
@@ -2313,7 +814,6 @@ export default function TimelineCanvas() {
             <canvas ref={canvasMainRef} style={{ display: 'block', width: '100%', height: '100%' }} />
           </div>
 
-          {/* DOCK MINIMAP */}
           <div style={{
             position: 'absolute',
             bottom: 10,
@@ -2339,10 +839,10 @@ export default function TimelineCanvas() {
 
       <KnowledgeSplitView
         isOpen={isDrawerOpen}
-        onClose={handleCloseDrawer}
+        onClose={() => { setIsDrawerOpen(false); setDrawerEvent(null); }}
         event={drawerEvent}
         onStartDrawTerritory={handleStartDrawTerritory}
-        onDeleteTerritory={handleDeleteTerritory}
+        onDeleteTerritory={(evt) => evt && handleSaveTerritory(evt.id, null)}
       />
 
       <FilterDrawer
@@ -2364,8 +864,7 @@ export default function TimelineCanvas() {
         customSelectedIds={customSelectedIds}
         onToggleCustomEvent={(id) => setCustomSelectedIds(prev => {
           const next = new Set(prev);
-          if (next.has(id)) next.delete(id);
-          else next.add(id);
+          next.has(id) ? next.delete(id) : next.add(id);
           return next;
         })}
         onSelectAllCustom={() => setCustomSelectedIds(new Set(events.map(e => e.id)))}
@@ -2392,9 +891,7 @@ export default function TimelineCanvas() {
         const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - HEADER_H - subBarH) * splitRatio) : 0;
         const absoluteTargetY = HEADER_H + subBarH + actualAtlasH + popupPos.y;
 
-        const debut = selectedEvent.date_debut;
-        const fin = selectedEvent.date_fin ?? debut;
-        if (fin < viewRange.min || debut > viewRange.max) {
+        if ((selectedEvent.date_fin ?? selectedEvent.date_debut) < viewRange.min || selectedEvent.date_debut > viewRange.max) {
           return null;
         }
 
