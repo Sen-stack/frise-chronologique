@@ -25,6 +25,56 @@ export default function TimelineHeader({
   const btnSize = isMobileScreen ? 28 : 32;
   const drawColor = drawingTerritoryEvent?.couleur || '#0284c7';
 
+  const tools = [
+    {
+      id: 'polygon',
+      title: 'Zone / Polygone',
+      icon: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="12 3 20 9 17 20 7 20 4 9 12 3" />
+        </svg>
+      )
+    },
+    {
+      id: 'line',
+      title: 'Trait droit (2 clics)',
+      icon: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+          <line x1="5" y1="19" x2="19" y2="5" />
+        </svg>
+      )
+    },
+    {
+      id: 'curve',
+      title: 'Trait courbé (3 clics)',
+      icon: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+          <path d="M4 18 Q 12 3, 20 18" />
+        </svg>
+      )
+    },
+    {
+      id: 'arrow',
+      title: 'Flèche droite (2 clics)',
+      icon: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="5" y1="19" x2="19" y2="5" />
+          <polyline points="9 5 19 5 19 15" />
+        </svg>
+      )
+    },
+    {
+      id: 'curvedArrow',
+      title: 'Flèche courbée (3 clics)',
+      icon: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 17 Q 11 4, 19 12" />
+          <polyline points="14 12 19 12 19 7" />
+        </svg>
+      )
+    }
+  ];
+
   return (
     <>
       <header style={{
@@ -130,7 +180,7 @@ export default function TimelineHeader({
                     <button
                       type="button"
                       onClick={() => onStartDrawTerritory(activeSelection)}
-                      title={`Dessiner le territoire de "${activeSelection.titre}"`}
+                      title={`Dessiner sur la carte pour "${activeSelection.titre}"`}
                       style={{
                         width: btnSize,
                         height: btnSize,
@@ -393,7 +443,7 @@ export default function TimelineHeader({
                   <button
                     type="button"
                     onClick={() => onStartDrawTerritory(activeSelection)}
-                    title={`Dessiner le territoire de "${activeSelection.titre}"`}
+                    title={`Dessiner sur la carte pour "${activeSelection.titre}"`}
                     style={{
                       width: 32,
                       height: 32,
@@ -576,7 +626,7 @@ export default function TimelineHeader({
 
       </header>
 
-      {/* SOUS-BARRE DE DESSIN COMPACTE (AVEC RETRAIT POUR LA LANGUETTE GAUCHE) */}
+      {/* SOUS-BARRE DE DESSIN VECTORIEL */}
       {drawingTerritoryEvent && (
         <div
           ref={subBarRef}
@@ -593,55 +643,164 @@ export default function TimelineHeader({
             boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)'
           }}
         >
+          {/* Ligne 1 : Outils de formes + Styles (Épaisseur & Pointillé) */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 6,
-            minHeight: 28
+            flexWrap: 'wrap'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
-              <span style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                backgroundColor: drawColor,
-                flexShrink: 0
-              }} />
-              <span style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#1c1917',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {drawingTerritoryEvent.titre}
-              </span>
+            {/* Sélecteur des 5 formes */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, backgroundColor: '#e2e8f0', padding: 2, borderRadius: 8 }}>
+              {tools.map(t => {
+                const isSelected = (drawUiState.activeTool || 'polygon') === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => drawUiState.actions?.setTool(t.id)}
+                    title={t.title}
+                    style={{
+                      width: 26,
+                      height: 24,
+                      borderRadius: 6,
+                      border: 'none',
+                      backgroundColor: isSelected ? '#ffffff' : 'transparent',
+                      color: isSelected ? drawColor : '#475569',
+                      boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0
+                    }}
+                  >
+                    {t.icon}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Sélecteur Épaisseur (Fin / Épais) + Tracé (Plein / Pointillé) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, backgroundColor: '#e2e8f0', padding: 2, borderRadius: 7 }}>
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.setThickness('thin')}
+                  title="Trait fin"
+                  style={{
+                    width: 24,
+                    height: 22,
+                    borderRadius: 5,
+                    border: 'none',
+                    backgroundColor: (drawUiState.thickness || 'thin') === 'thin' ? '#ffffff' : 'transparent',
+                    color: (drawUiState.thickness || 'thin') === 'thin' ? '#0f172a' : '#64748b',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                    <line x1="4" y1="12" x2="20" y2="12" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.setThickness('thick')}
+                  title="Trait épais"
+                  style={{
+                    width: 24,
+                    height: 22,
+                    borderRadius: 5,
+                    border: 'none',
+                    backgroundColor: drawUiState.thickness === 'thick' ? '#ffffff' : 'transparent',
+                    color: drawUiState.thickness === 'thick' ? '#0f172a' : '#64748b',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4.2" strokeLinecap="round">
+                    <line x1="4" y1="12" x2="20" y2="12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, backgroundColor: '#e2e8f0', padding: 2, borderRadius: 7 }}>
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.setDashed(false)}
+                  title="Trait plein"
+                  style={{
+                    width: 24,
+                    height: 22,
+                    borderRadius: 5,
+                    border: 'none',
+                    backgroundColor: !drawUiState.dashed ? '#ffffff' : 'transparent',
+                    color: !drawUiState.dashed ? '#0f172a' : '#64748b',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                    <line x1="4" y1="12" x2="20" y2="12" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.setDashed(true)}
+                  title="Trait pointillé"
+                  style={{
+                    width: 24,
+                    height: 22,
+                    borderRadius: 5,
+                    border: 'none',
+                    backgroundColor: drawUiState.dashed ? '#ffffff' : 'transparent',
+                    color: drawUiState.dashed ? '#0f172a' : '#64748b',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" strokeDasharray="3 3" strokeLinecap="round">
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Actions (Valider forme, Lien, Annuler, Effacer, Enregistrer, Fermer) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{
                 fontSize: 10,
                 fontWeight: 700,
-                color: '#64748b',
+                color: '#475569',
                 backgroundColor: '#e2e8f0',
-                padding: '1px 5px',
-                borderRadius: 6,
-                flexShrink: 0
+                padding: '2px 6px',
+                borderRadius: 6
               }}>
                 {drawUiState.shapesCount}
               </span>
-            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-              {/* Nouvelle forme */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.validateShape()}
                 disabled={!drawUiState.canValidateShape}
                 title="Valider cette forme et en tracer une nouvelle"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
                   border: `1px solid ${drawUiState.canValidateShape ? drawColor : '#cbd5e1'}`,
                   backgroundColor: drawUiState.canValidateShape ? '#f0f9ff' : '#f1f5f9',
                   color: drawUiState.canValidateShape ? drawColor : '#94a3b8',
@@ -652,23 +811,21 @@ export default function TimelineHeader({
                   padding: 0
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="12 2 19 8 16 19 8 19 5 8 12 2" />
-                  <line x1="12" y1="8" x2="12" y2="14" />
-                  <line x1="9" y1="11" x2="15" y2="11" />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
 
-              {/* Ajouter un lien */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.toggleAddLink()}
                 title={`Associer un lien (${drawUiState.linksCount})`}
                 style={{
                   position: 'relative',
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
                   border: '1px solid #cbd5e1',
                   backgroundColor: drawUiState.isAddingLink ? '#e0f2fe' : '#ffffff',
                   color: '#0284c7',
@@ -679,7 +836,7 @@ export default function TimelineHeader({
                   padding: 0
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                 </svg>
@@ -690,11 +847,11 @@ export default function TimelineHeader({
                     right: -4,
                     backgroundColor: '#0284c7',
                     color: '#ffffff',
-                    fontSize: 8.5,
+                    fontSize: 8,
                     fontWeight: 800,
                     borderRadius: '50%',
-                    width: 14,
-                    height: 14,
+                    width: 13,
+                    height: 13,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'
@@ -704,16 +861,15 @@ export default function TimelineHeader({
                 )}
               </button>
 
-              {/* Annuler dernier point */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.undoPoint()}
                 disabled={!drawUiState.canUndo}
                 title="Annuler le dernier point"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
                   border: '1px solid #cbd5e1',
                   backgroundColor: '#ffffff',
                   color: drawUiState.canUndo ? '#475569' : '#cbd5e1',
@@ -724,22 +880,21 @@ export default function TimelineHeader({
                   padding: 0
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 7v6h6" />
                   <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
                 </svg>
               </button>
 
-              {/* Effacer tout */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.clearAll()}
                 disabled={!drawUiState.canClear}
                 title="Tout effacer"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
                   border: '1px solid #fecaca',
                   backgroundColor: drawUiState.canClear ? '#fff1f2' : '#f8fafc',
                   color: drawUiState.canClear ? '#e11d48' : '#cbd5e1',
@@ -750,22 +905,21 @@ export default function TimelineHeader({
                   padding: 0
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
               </button>
 
-              {/* Enregistrer */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.save()}
                 disabled={drawUiState.isSaving}
-                title="Enregistrer le territoire"
+                title="Enregistrer"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
                   border: 'none',
                   backgroundColor: '#15803d',
                   color: '#ffffff',
@@ -776,20 +930,19 @@ export default function TimelineHeader({
                   padding: 0
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </button>
 
-              {/* Fermer */}
               <button
                 type="button"
                 onClick={onCancelDrawing}
-                title="Fermer le mode dessin"
+                title="Fermer"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
                   border: '1px solid #cbd5e1',
                   backgroundColor: '#ffffff',
                   color: '#64748b',
@@ -800,7 +953,7 @@ export default function TimelineHeader({
                   padding: 0
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>

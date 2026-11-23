@@ -208,22 +208,98 @@ function findEntityMeta(rawName) {
   return null;
 }
 
+function buildCurvedPath(points, segments = 28) {
+  if (points.length < 3) return points;
+  const [p0, p1, p2] = points;
+  const curve = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const inv = 1 - t;
+    const lat = inv * inv * p0[0] + 2 * inv * t * p1[0] + t * t * p2[0];
+    const lng = inv * inv * p0[1] + 2 * inv * t * p1[1] + t * t * p2[1];
+    curve.push([lat, lng]);
+  }
+  return curve;
+}
+
+// Pointe de flèche fine et proportionnée (chevron [aileGauche, pointe, aileDroite])
+function buildArrowHeadChevron(pathPts, totalSpan, isThick) {
+  if (!pathPts || pathPts.length < 2) return null;
+  const tip = pathPts[pathPts.length - 1];
+  const prev = pathPts[pathPts.length - 2];
+
+  const dLat = tip[0] - prev[0];
+  const dLng = tip[1] - prev[1];
+  const angle = Math.atan2(dLat, dLng);
+
+  const minLen = isThick ? 0.25 : 0.16;
+  const maxLen = isThick ? 0.85 : 0.55;
+  const headLen = Math.min(Math.max(totalSpan * 0.14, minLen), maxLen);
+  const spread = Math.PI / 6;
+
+  const leftWing = [
+    tip[0] - headLen * Math.sin(angle - spread),
+    tip[1] - headLen * Math.cos(angle - spread)
+  ];
+  const rightWing = [
+    tip[0] - headLen * Math.sin(angle + spread),
+    tip[1] - headLen * Math.cos(angle + spread)
+  ];
+
+  return [leftWing, tip, rightWing];
+}
+
 function extractTerritoryDataFromGeojson(rawGeo) {
-  if (!rawGeo) return { polygons: [], links: [] };
+  if (!rawGeo) return { shapes: [], links: [] };
   let parsed = rawGeo;
   if (typeof rawGeo === 'string') {
     try {
       parsed = JSON.parse(rawGeo);
     } catch {
-      return { polygons: [], links: [] };
+      return { shapes: [], links: [] };
     }
   }
-  if (!parsed || typeof parsed !== 'object') return { polygons: [], links: [] };
+  if (!parsed || typeof parsed !== 'object') return { shapes: [], links: [] };
+
+  if (parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
+    const links = Array.isArray(parsed.properties?.links) ? parsed.properties.links : [];
+    const shapes = parsed.features
+      .map(feat => {
+        const props = feat.properties || {};
+        const kind = props.kind || (feat.geometry?.type === 'LineString' ? 'line' : 'polygon');
+        const thickness = props.thickness || 'thin';
+        const dashed = Boolean(props.dashed);
+        const rawPoints = Array.isArray(props.controlPoints) ? props.controlPoints : null;
+
+        if (rawPoints && rawPoints.length >= 2) {
+          return { kind, points: rawPoints, thickness, dashed };
+        }
+
+        if (feat.geometry?.type === 'Polygon') {
+          const ring = feat.geometry.coordinates[0] || [];
+          const pts = ring.map(c => [c[1], c[0]]);
+          if (pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) {
+            pts.pop();
+          }
+          return pts.length >= 3 ? { kind: 'polygon', points: pts, thickness, dashed } : null;
+        }
+
+        if (feat.geometry?.type === 'LineString') {
+          const pts = (feat.geometry.coordinates || []).map(c => [c[1], c[0]]);
+          return pts.length >= 2 ? { kind, points: pts, thickness, dashed } : null;
+        }
+
+        return null;
+      })
+      .filter(Boolean);
+
+    return { shapes, links };
+  }
 
   const links = Array.isArray(parsed.properties?.links) ? parsed.properties.links : [];
   const geometry = parsed.type === 'Feature' ? parsed.geometry : parsed;
   if (!geometry || !geometry.type || !Array.isArray(geometry.coordinates)) {
-    return { polygons: [], links };
+    return { shapes: [], links };
   }
 
   if (geometry.type === 'Polygon') {
@@ -232,24 +308,100 @@ function extractTerritoryDataFromGeojson(rawGeo) {
     if (pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) {
       pts.pop();
     }
-    return { polygons: pts.length >= 3 ? [pts] : [], links };
+    return {
+      shapes: pts.length >= 3 ? [{ kind: 'polygon', points: pts, thickness: 'thin', dashed: false }] : [],
+      links
+    };
   }
 
   if (geometry.type === 'MultiPolygon') {
-    const polygons = geometry.coordinates
+    const shapes = geometry.coordinates
       .map(polyCoords => {
         const ring = polyCoords[0] || [];
         const pts = ring.map(c => [c[1], c[0]]);
         if (pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) {
           pts.pop();
         }
-        return pts;
+        return pts.length >= 3 ? { kind: 'polygon', points: pts, thickness: 'thin', dashed: false } : null;
       })
-      .filter(pts => pts.length >= 3);
-    return { polygons, links };
+      .filter(Boolean);
+    return { shapes, links };
   }
 
-  return { polygons: [], links };
+  return { shapes: [], links };
+}
+
+function RenderVectorShape({ shape, color, isSelected, interactive, onSelect, children }) {
+  const isThick = shape.thickness === 'thick';
+  const weight = isThick ? (isSelected ? 5.5 : 4.5) : (isSelected ? 3 : 2.2);
+  const dashArray = shape.dashed ? (isThick ? '9, 9' : '6, 6') : undefined;
+
+  if (shape.kind === 'polygon') {
+    if (shape.points.length < 3) return null;
+    return (
+      <Polygon
+        positions={shape.points}
+        interactive={interactive}
+        pathOptions={{
+          color,
+          weight,
+          dashArray,
+          opacity: 0.95,
+          fillColor: color,
+          fillOpacity: isSelected ? 0.36 : 0.22
+        }}
+        eventHandlers={onSelect ? { click: onSelect } : undefined}
+      >
+        {children}
+      </Polygon>
+    );
+  }
+
+  if (shape.points.length < 2) return null;
+
+  const isCurved = shape.kind === 'curve' || shape.kind === 'curvedArrow';
+  const hasArrow = shape.kind === 'arrow' || shape.kind === 'curvedArrow';
+  const pathPts = isCurved && shape.points.length >= 3
+    ? buildCurvedPath(shape.points)
+    : shape.points;
+
+  const startPt = pathPts[0];
+  const endPt = pathPts[pathPts.length - 1];
+  const totalSpan = Math.hypot(endPt[0] - startPt[0], endPt[1] - startPt[1]);
+  const arrowChevron = hasArrow ? buildArrowHeadChevron(pathPts, totalSpan, isThick) : null;
+
+  return (
+    <>
+      <Polyline
+        positions={pathPts}
+        interactive={interactive}
+        pathOptions={{
+          color,
+          weight,
+          dashArray,
+          opacity: 0.95,
+          lineCap: 'round'
+        }}
+        eventHandlers={onSelect ? { click: onSelect } : undefined}
+      >
+        {children}
+      </Polyline>
+      {arrowChevron && (
+        <Polyline
+          positions={arrowChevron}
+          interactive={interactive}
+          pathOptions={{
+            color,
+            weight: isThick ? 4.5 : 2.5,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }}
+          eventHandlers={onSelect ? { click: onSelect } : undefined}
+        />
+      )}
+    </>
+  );
 }
 
 function DynamicMapBridge({ boundingBoxCoords, isManualOverride, isDrawing, onUserInteract }) {
@@ -343,8 +495,12 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  const [completedPolygons, setCompletedPolygons] = useState([]);
+  const [completedShapes, setCompletedShapes] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
+  const [activeTool, setActiveTool] = useState('polygon');
+  const [thickness, setThickness] = useState('thin');
+  const [dashed, setDashed] = useState(false);
+
   const [territoryLinks, setTerritoryLinks] = useState([]);
   const [linkTitleInput, setLinkTitleInput] = useState('');
   const [linkUrlInput, setLinkUrlInput] = useState('');
@@ -355,44 +511,75 @@ export default function HistoricalAtlas({
 
   useEffect(() => {
     if (drawingEvent) {
-      const { polygons, links } = extractTerritoryDataFromGeojson(drawingEvent.zone_geojson);
-      setCompletedPolygons(polygons);
+      const { shapes, links } = extractTerritoryDataFromGeojson(drawingEvent.zone_geojson);
+      setCompletedShapes(shapes);
       setTerritoryLinks(links);
       setCurrentPoints([]);
+      setActiveTool('polygon');
+      setThickness('thin');
+      setDashed(false);
       setLinkTitleInput('');
       setLinkUrlInput('');
       setIsAddingLink(false);
       setIsManualOverride(true);
     } else {
-      setCompletedPolygons([]);
+      setCompletedShapes([]);
       setTerritoryLinks([]);
       setCurrentPoints([]);
       setIsAddingLink(false);
     }
   }, [drawingEvent]);
 
+  const isShapeReady = (tool, pts) => {
+    if (tool === 'polygon') return pts.length >= 3;
+    if (tool === 'curve' || tool === 'curvedArrow') return pts.length >= 3;
+    return pts.length >= 2;
+  };
+
   const handleAddDraftPoint = (latlng) => {
-    setCurrentPoints(prev => [...prev, latlng]);
+    setCurrentPoints(prev => {
+      const next = [...prev, latlng];
+      if ((activeTool === 'line' || activeTool === 'arrow') && next.length === 2) {
+        setCompletedShapes(shapes => [...shapes, { kind: activeTool, points: next, thickness, dashed }]);
+        return [];
+      }
+      if ((activeTool === 'curve' || activeTool === 'curvedArrow') && next.length === 3) {
+        setCompletedShapes(shapes => [...shapes, { kind: activeTool, points: next, thickness, dashed }]);
+        return [];
+      }
+      return next;
+    });
+  };
+
+  const handleChangeTool = (nextTool) => {
+    if (isShapeReady(activeTool, currentPoints)) {
+      setCompletedShapes(prev => [...prev, { kind: activeTool, points: currentPoints, thickness, dashed }]);
+    }
+    setCurrentPoints([]);
+    setActiveTool(nextTool);
   };
 
   const handleUndoPoint = () => {
     if (currentPoints.length > 0) {
       setCurrentPoints(prev => prev.slice(0, -1));
-    } else if (completedPolygons.length > 0) {
-      const lastPoly = completedPolygons[completedPolygons.length - 1];
-      setCompletedPolygons(prev => prev.slice(0, -1));
-      setCurrentPoints(lastPoly);
+    } else if (completedShapes.length > 0) {
+      const lastShape = completedShapes[completedShapes.length - 1];
+      setCompletedShapes(prev => prev.slice(0, -1));
+      setActiveTool(lastShape.kind);
+      setThickness(lastShape.thickness || 'thin');
+      setDashed(Boolean(lastShape.dashed));
+      setCurrentPoints(lastShape.points.slice(0, -1));
     }
   };
 
   const handleValidateCurrentShape = () => {
-    if (currentPoints.length < 3) return;
-    setCompletedPolygons(prev => [...prev, currentPoints]);
+    if (!isShapeReady(activeTool, currentPoints)) return;
+    setCompletedShapes(prev => [...prev, { kind: activeTool, points: currentPoints, thickness, dashed }]);
     setCurrentPoints([]);
   };
 
   const handleClearAllShapes = () => {
-    setCompletedPolygons([]);
+    setCompletedShapes([]);
     setCurrentPoints([]);
   };
 
@@ -419,26 +606,56 @@ export default function HistoricalAtlas({
   const handleConfirmSaveTerritory = async () => {
     if (!drawingEvent || !onSaveTerritory) return;
 
-    const allPolys = currentPoints.length >= 3
-      ? [...completedPolygons, currentPoints]
-      : [...completedPolygons];
+    const allShapes = isShapeReady(activeTool, currentPoints)
+      ? [...completedShapes, { kind: activeTool, points: currentPoints, thickness, dashed }]
+      : [...completedShapes];
 
     setIsSavingZone(true);
 
-    if (allPolys.length === 0) {
+    if (allShapes.length === 0) {
       await onSaveTerritory(drawingEvent.id, null);
       setIsSavingZone(false);
       return;
     }
 
-    const closedRings = allPolys.map(poly => {
-      const coords = poly.map(pt => [pt[1], pt[0]]);
-      coords.push(coords[0]);
-      return [coords];
+    const features = allShapes.map(shape => {
+      if (shape.kind === 'polygon') {
+        const ring = shape.points.map(pt => [pt[1], pt[0]]);
+        ring.push(ring[0]);
+        return {
+          type: 'Feature',
+          properties: {
+            kind: 'polygon',
+            thickness: shape.thickness,
+            dashed: shape.dashed,
+            controlPoints: shape.points
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [ring]
+          }
+        };
+      }
+
+      const isCurved = shape.kind === 'curve' || shape.kind === 'curvedArrow';
+      const linePts = isCurved && shape.points.length >= 3 ? buildCurvedPath(shape.points) : shape.points;
+      return {
+        type: 'Feature',
+        properties: {
+          kind: shape.kind,
+          thickness: shape.thickness,
+          dashed: shape.dashed,
+          controlPoints: shape.points
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: linePts.map(pt => [pt[1], pt[0]])
+        }
+      };
     });
 
     const geojsonPayload = {
-      type: 'Feature',
+      type: 'FeatureCollection',
       properties: {
         name: drawingEvent.titre,
         couleur: drawingEvent.couleur || '#0284c7',
@@ -446,9 +663,7 @@ export default function HistoricalAtlas({
         date_fin: drawingEvent.date_fin ?? drawingEvent.date_debut,
         links: territoryLinks
       },
-      geometry: closedRings.length === 1
-        ? { type: 'Polygon', coordinates: closedRings[0] }
-        : { type: 'MultiPolygon', coordinates: closedRings }
+      features
     };
 
     await onSaveTerritory(drawingEvent.id, geojsonPayload);
@@ -457,7 +672,7 @@ export default function HistoricalAtlas({
 
   useEffect(() => {
     if (!onDrawUiStateChange) return;
-    const totalShapesCount = completedPolygons.length + (currentPoints.length >= 3 ? 1 : 0);
+    const totalShapesCount = completedShapes.length + (isShapeReady(activeTool, currentPoints) ? 1 : 0);
 
     const linksBarContent = (isAddingLink || territoryLinks.length > 0) ? (
       <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 5, display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -543,15 +758,21 @@ export default function HistoricalAtlas({
     ) : null;
 
     onDrawUiStateChange({
+      activeTool,
+      thickness,
+      dashed,
       shapesCount: totalShapesCount,
-      canValidateShape: currentPoints.length >= 3,
-      canUndo: currentPoints.length > 0 || completedPolygons.length > 0,
-      canClear: currentPoints.length > 0 || completedPolygons.length > 0,
+      canValidateShape: isShapeReady(activeTool, currentPoints),
+      canUndo: currentPoints.length > 0 || completedShapes.length > 0,
+      canClear: currentPoints.length > 0 || completedShapes.length > 0,
       linksCount: territoryLinks.length,
       isAddingLink,
       isSaving: isSavingZone,
       linksBarContent,
       actions: {
+        setTool: handleChangeTool,
+        setThickness,
+        setDashed,
         validateShape: handleValidateCurrentShape,
         toggleAddLink: () => setIsAddingLink(prev => !prev),
         undoPoint: handleUndoPoint,
@@ -559,7 +780,7 @@ export default function HistoricalAtlas({
         save: handleConfirmSaveTerritory
       }
     });
-  }, [completedPolygons, currentPoints, territoryLinks, linkTitleInput, linkUrlInput, isAddingLink, isSavingZone, drawingEvent]);
+  }, [completedShapes, currentPoints, activeTool, thickness, dashed, territoryLinks, linkTitleInput, linkUrlInput, isAddingLink, isSavingZone, drawingEvent]);
 
   const currentCenterYear = useMemo(() => {
     if (typeof targetDate === 'number') return targetDate;
@@ -692,15 +913,15 @@ export default function HistoricalAtlas({
         return Math.abs(currentCenterYear - evt.date_debut) <= pointTolerance;
       })
       .map(evt => {
-        const { polygons, links } = extractTerritoryDataFromGeojson(evt.zone_geojson);
+        const { shapes, links } = extractTerritoryDataFromGeojson(evt.zone_geojson);
         return {
           event: evt,
-          polygons,
+          shapes,
           links,
           color: evt.couleur || '#0284c7'
         };
       })
-      .filter(item => item.polygons.length > 0);
+      .filter(item => item.shapes.length > 0);
   }, [events, currentCenterYear, viewRange, drawingEvent]);
 
   const activePoints = useMemo(() => {
@@ -743,8 +964,8 @@ export default function HistoricalAtlas({
   const combinedBoundsCoords = useMemo(() => {
     const coords = activePoints.map(p => [p.latitude, p.longitude]);
     customTerritories.forEach(t => {
-      t.polygons.forEach(poly => {
-        poly.forEach(pt => coords.push(pt));
+      t.shapes.forEach(sh => {
+        sh.points.forEach(pt => coords.push(pt));
       });
     });
     return coords;
@@ -906,25 +1127,18 @@ export default function HistoricalAtlas({
           />
         )}
 
-        {customTerritories.map(({ event: evt, polygons, links, color }) => {
+        {customTerritories.map(({ event: evt, shapes, links, color }) => {
           const isSelected = selectedEvent && selectedEvent.id === evt.id;
-          return polygons.map((polyCoords, idx) => (
-            <Polygon
-              key={`custom-zone-${evt.id}-${idx}`}
-              positions={polyCoords}
+          return shapes.map((sh, idx) => (
+            <RenderVectorShape
+              key={`custom-shape-${evt.id}-${idx}-${sh.thickness}-${sh.dashed}`}
+              shape={sh}
+              color={color}
+              isSelected={isSelected}
               interactive={!isDrawingMode}
-              pathOptions={{
-                color: color,
-                weight: isSelected ? 3 : 2,
-                opacity: 0.95,
-                fillColor: color,
-                fillOpacity: isSelected ? 0.38 : 0.24
-              }}
-              eventHandlers={{
-                click: () => {
-                  if (!isDrawingMode && onSelectEvent) {
-                    onSelectEvent(evt);
-                  }
+              onSelect={() => {
+                if (!isDrawingMode && onSelectEvent) {
+                  onSelectEvent(evt);
                 }
               }}
             >
@@ -967,43 +1181,33 @@ export default function HistoricalAtlas({
                   )}
                 </div>
               </Popup>
-            </Polygon>
+            </RenderVectorShape>
           ));
         })}
 
-        {isDrawingMode && completedPolygons.map((polyCoords, idx) => (
-          <Polygon
-            key={`draft-completed-${idx}`}
-            positions={polyCoords}
+        {isDrawingMode && completedShapes.map((sh, idx) => (
+          <RenderVectorShape
+            key={`draft-completed-${idx}-${sh.thickness}-${sh.dashed}`}
+            shape={sh}
+            color={drawColor}
+            isSelected={true}
             interactive={false}
-            pathOptions={{
-              color: drawColor,
-              weight: 2.5,
-              fillColor: drawColor,
-              fillOpacity: 0.32
-            }}
           />
         ))}
 
         {isDrawingMode && currentPoints.length > 0 && (
           <>
-            {currentPoints.length >= 3 ? (
-              <Polygon
-                positions={currentPoints}
-                interactive={false}
-                pathOptions={{
-                  color: drawColor,
-                  weight: 2,
-                  dashArray: '6, 6',
-                  fillColor: drawColor,
-                  fillOpacity: 0.22
+            {currentPoints.length >= 2 && (
+              <RenderVectorShape
+                shape={{
+                  kind: activeTool,
+                  points: currentPoints,
+                  thickness,
+                  dashed
                 }}
-              />
-            ) : (
-              <Polyline
-                positions={currentPoints}
+                color={drawColor}
+                isSelected={false}
                 interactive={false}
-                pathOptions={{ color: drawColor, weight: 2, dashArray: '6, 6' }}
               />
             )}
             {currentPoints.map((pt, idx) => (
