@@ -332,7 +332,8 @@ export default function HistoricalAtlas({
   recalibrateTrigger = 0,
   drawingEvent = null,
   onSaveTerritory,
-  onCancelDrawing
+  onCancelDrawing,
+  onDrawUiStateChange
 }) {
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [worldGeoJson, setWorldGeoJson] = useState(null);
@@ -370,6 +371,198 @@ export default function HistoricalAtlas({
       setIsAddingLink(false);
     }
   }, [drawingEvent]);
+
+  // Actions de dessin multi-formes
+  const handleAddDraftPoint = (latlng) => {
+    setCurrentPoints(prev => [...prev, latlng]);
+  };
+
+  const handleUndoPoint = () => {
+    if (currentPoints.length > 0) {
+      setCurrentPoints(prev => prev.slice(0, -1));
+    } else if (completedPolygons.length > 0) {
+      const lastPoly = completedPolygons[completedPolygons.length - 1];
+      setCompletedPolygons(prev => prev.slice(0, -1));
+      setCurrentPoints(lastPoly);
+    }
+  };
+
+  const handleValidateCurrentShape = () => {
+    if (currentPoints.length < 3) return;
+    setCompletedPolygons(prev => [...prev, currentPoints]);
+    setCurrentPoints([]);
+  };
+
+  const handleClearAllShapes = () => {
+    setCompletedPolygons([]);
+    setCurrentPoints([]);
+  };
+
+  const handleAddTerritoryLink = (e) => {
+    e.preventDefault();
+    const rawUrl = linkUrlInput.trim();
+    if (!rawUrl) return;
+    const formattedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    const newLink = {
+      id: Date.now(),
+      titre: linkTitleInput.trim() || formattedUrl,
+      url: formattedUrl
+    };
+    setTerritoryLinks(prev => [...prev, newLink]);
+    setLinkTitleInput('');
+    setLinkUrlInput('');
+    setIsAddingLink(false);
+  };
+
+  const handleRemoveTerritoryLink = (linkId) => {
+    setTerritoryLinks(prev => prev.filter(l => l.id !== linkId));
+  };
+
+  const handleConfirmSaveTerritory = async () => {
+    if (!drawingEvent || !onSaveTerritory) return;
+
+    const allPolys = currentPoints.length >= 3
+      ? [...completedPolygons, currentPoints]
+      : [...completedPolygons];
+
+    setIsSavingZone(true);
+
+    if (allPolys.length === 0) {
+      await onSaveTerritory(drawingEvent.id, null);
+      setIsSavingZone(false);
+      return;
+    }
+
+    const closedRings = allPolys.map(poly => {
+      const coords = poly.map(pt => [pt[1], pt[0]]);
+      coords.push(coords[0]);
+      return [coords];
+    });
+
+    const geojsonPayload = {
+      type: 'Feature',
+      properties: {
+        name: drawingEvent.titre,
+        couleur: drawingEvent.couleur || '#0284c7',
+        date_debut: drawingEvent.date_debut,
+        date_fin: drawingEvent.date_fin ?? drawingEvent.date_debut,
+        links: territoryLinks
+      },
+      geometry: closedRings.length === 1
+        ? { type: 'Polygon', coordinates: closedRings[0] }
+        : { type: 'MultiPolygon', coordinates: closedRings }
+    };
+
+    await onSaveTerritory(drawingEvent.id, geojsonPayload);
+    setIsSavingZone(false);
+  };
+
+  // Synchronisation de l'interface de dessin vers la sous-barre de TimelineCanvas
+  useEffect(() => {
+    if (!onDrawUiStateChange) return;
+    const totalShapesCount = completedPolygons.length + (currentPoints.length >= 3 ? 1 : 0);
+
+    const linksBarContent = (isAddingLink || territoryLinks.length > 0) ? (
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 5, display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {isAddingLink && (
+          <form onSubmit={handleAddTerritoryLink} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="Titre du lien"
+              value={linkTitleInput}
+              onChange={(e) => setLinkTitleInput(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '4px 7px',
+                borderRadius: 5,
+                border: '1px solid #cbd5e1',
+                fontSize: 11,
+                outline: 'none'
+              }}
+            />
+            <input
+              type="text"
+              required
+              placeholder="https://..."
+              value={linkUrlInput}
+              onChange={(e) => setLinkUrlInput(e.target.value)}
+              style={{
+                flex: 1.4,
+                padding: '4px 7px',
+                borderRadius: 5,
+                border: '1px solid #cbd5e1',
+                fontSize: 11,
+                outline: 'none'
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: '4px 9px',
+                borderRadius: 5,
+                border: 'none',
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              OK
+            </button>
+          </form>
+        )}
+
+        {territoryLinks.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {territoryLinks.map(lk => (
+              <span
+                key={lk.id}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '2px 7px',
+                  borderRadius: 5,
+                  backgroundColor: '#e2e8f0',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: '#334155'
+                }}
+              >
+                <span>{lk.titre}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTerritoryLink(lk.id)}
+                  style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 10, padding: 0 }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    ) : null;
+
+    onDrawUiStateChange({
+      shapesCount: totalShapesCount,
+      canValidateShape: currentPoints.length >= 3,
+      canUndo: currentPoints.length > 0 || completedPolygons.length > 0,
+      canClear: currentPoints.length > 0 || completedPolygons.length > 0,
+      linksCount: territoryLinks.length,
+      isAddingLink,
+      isSaving: isSavingZone,
+      linksBarContent,
+      actions: {
+        validateShape: handleValidateCurrentShape,
+        toggleAddLink: () => setIsAddingLink(prev => !prev),
+        undoPoint: handleUndoPoint,
+        clearAll: handleClearAllShapes,
+        save: handleConfirmSaveTerritory
+      }
+    });
+  }, [completedPolygons, currentPoints, territoryLinks, linkTitleInput, linkUrlInput, isAddingLink, isSavingZone, drawingEvent]);
 
   const currentCenterYear = useMemo(() => {
     if (typeof targetDate === 'number') return targetDate;
@@ -486,7 +679,6 @@ export default function HistoricalAtlas({
     });
   }, [events, viewRange]);
 
-  // Territoires personnalisés synchronisés avec le curseur vertical de la frise
   const customTerritories = useMemo(() => {
     const span = viewRange ? Math.max(1, viewRange.max - viewRange.min) : 500;
     const pointTolerance = Math.max(1, Math.round(span * 0.015));
@@ -582,94 +774,8 @@ export default function HistoricalAtlas({
     }
   }, [recalibrateTrigger]);
 
-  // Actions de dessin multi-formes
-  const handleAddDraftPoint = (latlng) => {
-    setCurrentPoints(prev => [...prev, latlng]);
-  };
-
-  const handleUndoPoint = () => {
-    if (currentPoints.length > 0) {
-      setCurrentPoints(prev => prev.slice(0, -1));
-    } else if (completedPolygons.length > 0) {
-      const lastPoly = completedPolygons[completedPolygons.length - 1];
-      setCompletedPolygons(prev => prev.slice(0, -1));
-      setCurrentPoints(lastPoly);
-    }
-  };
-
-  const handleValidateCurrentShape = () => {
-    if (currentPoints.length < 3) return;
-    setCompletedPolygons(prev => [...prev, currentPoints]);
-    setCurrentPoints([]);
-  };
-
-  const handleClearAllShapes = () => {
-    setCompletedPolygons([]);
-    setCurrentPoints([]);
-  };
-
-  const handleAddTerritoryLink = (e) => {
-    e.preventDefault();
-    const rawUrl = linkUrlInput.trim();
-    if (!rawUrl) return;
-    const formattedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-    const newLink = {
-      id: Date.now(),
-      titre: linkTitleInput.trim() || formattedUrl,
-      url: formattedUrl
-    };
-    setTerritoryLinks(prev => [...prev, newLink]);
-    setLinkTitleInput('');
-    setLinkUrlInput('');
-    setIsAddingLink(false);
-  };
-
-  const handleRemoveTerritoryLink = (linkId) => {
-    setTerritoryLinks(prev => prev.filter(l => l.id !== linkId));
-  };
-
-  const handleConfirmSaveTerritory = async () => {
-    if (!drawingEvent || !onSaveTerritory) return;
-
-    const allPolys = currentPoints.length >= 3
-      ? [...completedPolygons, currentPoints]
-      : [...completedPolygons];
-
-    setIsSavingZone(true);
-
-    if (allPolys.length === 0) {
-      await onSaveTerritory(drawingEvent.id, null);
-      setIsSavingZone(false);
-      return;
-    }
-
-    const closedRings = allPolys.map(poly => {
-      const coords = poly.map(pt => [pt[1], pt[0]]);
-      coords.push(coords[0]);
-      return [coords];
-    });
-
-    const geojsonPayload = {
-      type: 'Feature',
-      properties: {
-        name: drawingEvent.titre,
-        couleur: drawingEvent.couleur || '#0284c7',
-        date_debut: drawingEvent.date_debut,
-        date_fin: drawingEvent.date_fin ?? drawingEvent.date_debut,
-        links: territoryLinks
-      },
-      geometry: closedRings.length === 1
-        ? { type: 'Polygon', coordinates: closedRings[0] }
-        : { type: 'MultiPolygon', coordinates: closedRings }
-    };
-
-    await onSaveTerritory(drawingEvent.id, geojsonPayload);
-    setIsSavingZone(false);
-  };
-
   const currentBaseMap = isReliefProp ? BASE_MAPS.topo : BASE_MAPS.neutre;
   const drawColor = drawingEvent?.couleur || '#0284c7';
-  const totalShapesCount = completedPolygons.length + (currentPoints.length >= 3 ? 1 : 0);
 
   if (isGeologyMode) {
     return (
@@ -702,238 +808,6 @@ export default function HistoricalAtlas({
           cursor: crosshair !important;
         }
       `}</style>
-
-      {/* BARRE FLOTTANTE DE DESSIN SUR LA CARTE GLOBALE */}
-      {isDrawingMode && (
-        <div
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            top: 12,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 1000,
-            backgroundColor: 'rgba(255, 255, 255, 0.96)',
-            backdropFilter: 'blur(10px)',
-            border: `1.5px solid ${drawColor}`,
-            borderRadius: 12,
-            padding: '8px 14px',
-            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.18)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            maxWidth: '94vw',
-            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: drawColor }}>
-                Tracé territorial ({totalShapesCount} forme{totalShapesCount > 1 ? 's' : ''})
-              </span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#1c1917' }}>
-                {drawingEvent.titre} ({formatYear(drawingEvent.date_debut)}{drawingEvent.date_fin ? ` — ${formatYear(drawingEvent.date_fin)}` : ''})
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              {currentPoints.length >= 3 && (
-                <button
-                  type="button"
-                  onClick={handleValidateCurrentShape}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: 7,
-                    border: `1px solid ${drawColor}`,
-                    backgroundColor: '#f0f9ff',
-                    color: drawColor,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  + Nouvelle forme
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsAddingLink(prev => !prev)}
-                style={{
-                  padding: '5px 10px',
-                  borderRadius: 7,
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: isAddingLink ? '#e0f2fe' : '#ffffff',
-                  color: '#0284c7',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                + Lien ({territoryLinks.length})
-              </button>
-
-              {(currentPoints.length > 0 || completedPolygons.length > 0) && (
-                <button
-                  type="button"
-                  onClick={handleUndoPoint}
-                  style={{
-                    padding: '5px 9px',
-                    borderRadius: 7,
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    color: '#475569',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Annuler point
-                </button>
-              )}
-
-              {(currentPoints.length > 0 || completedPolygons.length > 0) && (
-                <button
-                  type="button"
-                  onClick={handleClearAllShapes}
-                  style={{
-                    padding: '5px 9px',
-                    borderRadius: 7,
-                    border: '1px solid #fecaca',
-                    backgroundColor: '#fff1f2',
-                    color: '#e11d48',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Tout effacer
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleConfirmSaveTerritory}
-                disabled={isSavingZone}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 7,
-                  border: 'none',
-                  backgroundColor: '#15803d',
-                  color: '#ffffff',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                {isSavingZone ? 'Sauvegarde...' : 'Enregistrer'}
-              </button>
-
-              <button
-                type="button"
-                onClick={onCancelDrawing}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: 7,
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: '#f8fafc',
-                  color: '#64748b',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
-
-          {/* Ajout et liste des liens associés aux formes */}
-          {(isAddingLink || territoryLinks.length > 0) && (
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {isAddingLink && (
-                <form onSubmit={handleAddTerritoryLink} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    placeholder="Titre du lien (ex. Article Wikipédia)"
-                    value={linkTitleInput}
-                    onChange={(e) => setLinkTitleInput(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      border: '1px solid #cbd5e1',
-                      fontSize: 11,
-                      outline: 'none'
-                    }}
-                  />
-                  <input
-                    type="text"
-                    required
-                    placeholder="https://..."
-                    value={linkUrlInput}
-                    onChange={(e) => setLinkUrlInput(e.target.value)}
-                    style={{
-                      flex: 1.4,
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      border: '1px solid #cbd5e1',
-                      fontSize: 11,
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="submit"
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 6,
-                      border: 'none',
-                      backgroundColor: '#0284c7',
-                      color: '#ffffff',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Ajouter
-                  </button>
-                </form>
-              )}
-
-              {territoryLinks.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {territoryLinks.map(lk => (
-                    <span
-                      key={lk.id}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        backgroundColor: '#f1f5f9',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: '#334155'
-                      }}
-                    >
-                      <span>{lk.titre}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTerritoryLink(lk.id)}
-                        style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 10, padding: 0 }}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       <MapContainer
         ref={mapRef}

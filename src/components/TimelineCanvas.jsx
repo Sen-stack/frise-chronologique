@@ -68,7 +68,18 @@ export default function TimelineCanvas() {
   const [isReliefActive, setIsReliefActive] = useState(false);
   const [recalibrateTrigger, setRecalibrateTrigger] = useState(0);
 
+  // États partagés pour la sous-barre de dessin
   const [drawingTerritoryEvent, setDrawingTerritoryEvent] = useState(null);
+  const [drawUiState, setDrawUiState] = useState({
+    shapesCount: 0,
+    canValidateShape: false,
+    canUndo: false,
+    canClear: false,
+    linksCount: 0,
+    isAddingLink: false,
+    isSaving: false,
+    actions: null
+  });
 
   const [mapLayers, setMapLayers] = useState({
     worldEmpires: true,
@@ -845,6 +856,7 @@ export default function TimelineCanvas() {
   };
 
   const HEADER_H = isMobileScreen ? 86 : 56;
+  const subBarRef = useRef(null);
 
   const updateSizesAndDraw = () => {
     setIsMobileScreen(window.innerWidth < 768);
@@ -853,8 +865,9 @@ export default function TimelineCanvas() {
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
     const currentHeaderH = totalW < 768 ? 86 : 56;
+    const subBarH = subBarRef.current ? subBarRef.current.offsetHeight : 0;
 
-    const availableAreaH = totalH - currentHeaderH;
+    const availableAreaH = totalH - currentHeaderH - subBarH;
     const actualRatio = isAtlasOpen ? splitRatio : 0;
     const atlasH = Math.round(availableAreaH * actualRatio);
     const timelineAreaH = availableAreaH - atlasH;
@@ -907,12 +920,12 @@ export default function TimelineCanvas() {
 
   useEffect(() => {
     updateSizesAndDraw();
-  }, [isAtlasOpen, splitRatio]);
+  }, [isAtlasOpen, splitRatio, drawingTerritoryEvent, drawUiState.isAddingLink]);
 
   useEffect(() => {
     window.addEventListener('resize', updateSizesAndDraw);
     return () => window.removeEventListener('resize', updateSizesAndDraw);
-  }, [isAtlasOpen, splitRatio]);
+  }, [isAtlasOpen, splitRatio, drawingTerritoryEvent]);
 
   useEffect(() => {
     drawScene();
@@ -1322,6 +1335,12 @@ export default function TimelineCanvas() {
   const handleStartDrawTerritory = (evt) => {
     const target = evt || selectedEvent || drawerEvent;
     if (!target) return;
+
+    if (drawingTerritoryEvent && drawingTerritoryEvent.id === target.id) {
+      setDrawingTerritoryEvent(null);
+      return;
+    }
+
     if (!isAtlasOpen) {
       setIsAtlasOpen(true);
       setSplitRatio(0.5);
@@ -1461,8 +1480,9 @@ export default function TimelineCanvas() {
     }
   };
 
-  const activeSelection = selectedEvent || drawerEvent;
+  const activeSelection = selectedEvent || drawerEvent || drawingTerritoryEvent;
   const btnSize = isMobileScreen ? 28 : 32;
+  const drawColor = drawingTerritoryEvent?.couleur || '#0284c7';
 
   return (
     <div style={{
@@ -1494,7 +1514,7 @@ export default function TimelineCanvas() {
         padding: isMobileScreen ? '4px 8px 4px 40px' : '0 10px 0 44px',
         boxSizing: 'border-box',
         zIndex: 30,
-        boxShadow: '0 4px 14px rgba(166, 180, 200, 0.35)',
+        boxShadow: drawingTerritoryEvent ? 'none' : '0 4px 14px rgba(166, 180, 200, 0.35)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.6)'
       }}>
 
@@ -1589,12 +1609,12 @@ export default function TimelineCanvas() {
                         width: btnSize,
                         height: btnSize,
                         borderRadius: '50%',
-                        backgroundColor: '#eaf0f6',
-                        border: '1px solid rgba(255, 255, 255, 0.8)',
+                        backgroundColor: drawingTerritoryEvent?.id === activeSelection.id ? '#e0f2fe' : '#eaf0f6',
+                        border: drawingTerritoryEvent?.id === activeSelection.id ? '1px solid #0284c7' : '1px solid rgba(255, 255, 255, 0.8)',
                         boxShadow: drawingTerritoryEvent?.id === activeSelection.id
                           ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
                           : '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                        color: activeSelection.zone_geojson ? '#0284c7' : '#0f766e',
+                        color: activeSelection.zone_geojson || drawingTerritoryEvent?.id === activeSelection.id ? '#0284c7' : '#0f766e',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -1858,12 +1878,12 @@ export default function TimelineCanvas() {
                       width: 32,
                       height: 32,
                       borderRadius: '50%',
-                      backgroundColor: '#eaf0f6',
-                      border: '1px solid rgba(255, 255, 255, 0.8)',
+                      backgroundColor: drawingTerritoryEvent?.id === activeSelection.id ? '#e0f2fe' : '#eaf0f6',
+                      border: drawingTerritoryEvent?.id === activeSelection.id ? '1px solid #0284c7' : '1px solid rgba(255, 255, 255, 0.8)',
                       boxShadow: drawingTerritoryEvent?.id === activeSelection.id
                         ? 'inset 2px 2px 5px rgba(166, 180, 200, 0.65), inset -2px -2px 5px rgba(255, 255, 255, 0.9)'
                         : '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
-                      color: activeSelection.zone_geojson ? '#0284c7' : '#0f766e',
+                      color: activeSelection.zone_geojson || drawingTerritoryEvent?.id === activeSelection.id ? '#0284c7' : '#0f766e',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -2042,6 +2062,179 @@ export default function TimelineCanvas() {
 
       </header>
 
+      {/* SOUS-BARRE DE DESSIN SOUS LE BANDEAU SUPÉRIEUR (NE MASQUE PAS LA CARTE) */}
+      {drawingTerritoryEvent && (
+        <div
+          ref={subBarRef}
+          style={{
+            width: '100%',
+            backgroundColor: '#f8fafc',
+            borderBottom: `1.5px solid ${drawColor}`,
+            padding: isMobileScreen ? '6px 10px' : '6px 16px',
+            boxSizing: 'border-box',
+            zIndex: 28,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)'
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 6
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: drawColor,
+                flexShrink: 0
+              }} />
+              <span style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#1c1917',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: isMobileScreen ? '48vw' : '300px'
+              }}>
+                {drawingTerritoryEvent.titre}
+              </span>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: '#64748b',
+                whiteSpace: 'nowrap'
+              }}>
+                ({drawUiState.shapesCount} forme{drawUiState.shapesCount > 1 ? 's' : ''})
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+              {drawUiState.canValidateShape && (
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.validateShape()}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border: `1px solid ${drawColor}`,
+                    backgroundColor: '#f0f9ff',
+                    color: drawColor,
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  + Forme
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => drawUiState.actions?.toggleAddLink()}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: drawUiState.isAddingLink ? '#e0f2fe' : '#ffffff',
+                  color: '#0284c7',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                + Lien ({drawUiState.linksCount})
+              </button>
+
+              {drawUiState.canUndo && (
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.undoPoint()}
+                  title="Annuler le dernier point"
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#475569',
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annuler pt
+                </button>
+              )}
+
+              {drawUiState.canClear && (
+                <button
+                  type="button"
+                  onClick={() => drawUiState.actions?.clearAll()}
+                  title="Tout effacer"
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #fecaca',
+                    backgroundColor: '#fff1f2',
+                    color: '#e11d48',
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Effacer
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => drawUiState.actions?.save()}
+                disabled={drawUiState.isSaving}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: 'none',
+                  backgroundColor: '#15803d',
+                  color: '#ffffff',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {drawUiState.isSaving ? '...' : 'Enregistrer'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDrawingTerritoryEvent(null)}
+                title="Fermer le mode dessin"
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: '#64748b',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Zone d'ajout et affichage des liens dans la sous-barre */}
+          {drawUiState.linksBarContent}
+        </div>
+      )}
+
       {/* ZONE CENTRALE */}
       <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
 
@@ -2074,6 +2267,7 @@ export default function TimelineCanvas() {
               drawingEvent={drawingTerritoryEvent}
               onSaveTerritory={handleSaveTerritory}
               onCancelDrawing={() => setDrawingTerritoryEvent(null)}
+              onDrawUiStateChange={setDrawUiState}
             />
           </div>
         )}
@@ -2194,8 +2388,9 @@ export default function TimelineCanvas() {
           : selectedEvent.date_debut;
 
         const dynamicX = ((targetYear - viewRange.min) / span) * window.innerWidth;
-        const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - HEADER_H) * splitRatio) : 0;
-        const absoluteTargetY = HEADER_H + actualAtlasH + popupPos.y;
+        const subBarH = subBarRef.current ? subBarRef.current.offsetHeight : 0;
+        const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - HEADER_H - subBarH) * splitRatio) : 0;
+        const absoluteTargetY = HEADER_H + subBarH + actualAtlasH + popupPos.y;
 
         const debut = selectedEvent.date_debut;
         const fin = selectedEvent.date_fin ?? debut;
