@@ -68,6 +68,8 @@ export default function TimelineCanvas() {
   const [isReliefActive, setIsReliefActive] = useState(false);
   const [recalibrateTrigger, setRecalibrateTrigger] = useState(0);
 
+  const [drawingTerritoryEvent, setDrawingTerritoryEvent] = useState(null);
+
   const [mapLayers, setMapLayers] = useState({
     worldEmpires: true,
     subDivisions: true,
@@ -80,7 +82,6 @@ export default function TimelineCanvas() {
   };
   const [atlasFocusedEvent, setAtlasFocusedEvent] = useState(null);
 
-  // Curseur temporel interactif mobile (année ciblée)
   const [timelineCursorYear, setTimelineCursorYear] = useState(200);
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -277,7 +278,6 @@ export default function TimelineCanvas() {
     const span = vMax - vMin;
     const yearToX = (year) => ((year - vMin) / span) * w;
 
-    // Fond général Soft UI #eaf0f6
     ctx.fillStyle = '#eaf0f6';
     ctx.fillRect(0, 0, w, h);
     hitboxesRef.current = [];
@@ -323,9 +323,7 @@ export default function TimelineCanvas() {
     const visibleX2 = Math.min(w + 60, xEnd);
     const visibleW = Math.max(0, visibleX2 - visibleX1);
 
-    // ========================================================
-    // --- 1. RAIL EN CREUX NEUMORPHIQUE (INSET SHADOW) ---
-    // ========================================================
+    // 1. RAIL EN CREUX NEUMORPHIQUE
     if (visibleW > 0) {
       const topY = barY - defaultHalfH;
       const totalH = defaultHalfH * 2;
@@ -369,9 +367,7 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // ========================================================
-    // --- 2. CAPSULES FLOTTANTES D'EMPIRES ET DYNASTIES ---
-    // ========================================================
+    // 2. CAPSULES FLOTTANTES D'EMPIRES ET DYNASTIES
     const externalPeriodLabels = [];
 
     gravityPeriodes.forEach((p) => {
@@ -544,9 +540,7 @@ export default function TimelineCanvas() {
       ctx.restore();
     });
 
-    // ========================================================
-    // --- 3. GRADUATIONS DOUCES SUR LE FOND CLAIR ---
-    // ========================================================
+    // 3. GRADUATIONS DOUCES SUR LE FOND CLAIR
     const interval = getTickInterval(span);
     const firstTick = Math.ceil(vMin / interval) * interval;
     ctx.fillStyle = '#64748b';
@@ -565,9 +559,7 @@ export default function TimelineCanvas() {
       ctx.fillText(formatYear(t), tx, barY + defaultHalfH + (isMobile ? 18 : 22));
     }
 
-    // ========================================================
-    // --- 4. REPÈRES PONCTUELS + PÉRIODES COMPACTES AU-DESSUS ---
-    // ========================================================
+    // 4. REPÈRES PONCTUELS + PÉRIODES COMPACTES AU-DESSUS
     let minImportanceForText = 1;
     if (span > 5000) minImportanceForText = 4;
     else if (span > 800) minImportanceForText = 3;
@@ -679,9 +671,7 @@ export default function TimelineCanvas() {
       });
     });
 
-    // ========================================================
-    // --- 5. SCRUBBER TEMPOREL DOUX NEUMORPHIQUE ---
-    // ========================================================
+    // 5. SCRUBBER TEMPOREL DOUX NEUMORPHIQUE
     const cursorX = yearToX(cursorYearRef.current);
 
     if (cursorX >= -100 && cursorX <= w + 100) {
@@ -736,9 +726,7 @@ export default function TimelineCanvas() {
       ctx.restore();
     }
 
-    // ========================================================
-    // --- 6. MINIMAP BASSE NEUMORPHIQUE ---
-    // ========================================================
+    // 6. MINIMAP BASSE NEUMORPHIQUE
     mctx.clearRect(0, 0, mw, mh);
 
     const activeSegments = getChapterSegments(activeChapter);
@@ -1331,6 +1319,41 @@ export default function TimelineCanvas() {
     }
   };
 
+  const handleStartDrawTerritory = (evt) => {
+    const target = evt || selectedEvent || drawerEvent;
+    if (!target) return;
+    if (!isAtlasOpen) {
+      setIsAtlasOpen(true);
+      setSplitRatio(0.5);
+    }
+    setSelectedEvent(null);
+    setIsDrawerOpen(false);
+    setDrawingTerritoryEvent(target);
+  };
+
+  const handleSaveTerritory = async (eventId, geojsonPayload) => {
+    const { data, error } = await supabase
+      .from('evenements')
+      .update({ zone_geojson: geojsonPayload })
+      .eq('id', eventId)
+      .select();
+
+    if (error) {
+      alert("Erreur de sauvegarde du territoire : " + error.message);
+    } else if (data && data.length > 0) {
+      const updated = data[0];
+      setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+      if (drawerEvent && drawerEvent.id === updated.id) setDrawerEvent(updated);
+      if (selectedEvent && selectedEvent.id === updated.id) setSelectedEvent(updated);
+      setDrawingTerritoryEvent(null);
+    }
+  };
+
+  const handleDeleteTerritory = async (evt) => {
+    if (!evt) return;
+    await handleSaveTerritory(evt.id, null);
+  };
+
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -1417,7 +1440,6 @@ export default function TimelineCanvas() {
     }
   };
 
-  // Sélection depuis un marqueur de la carte
   const handleSelectEventFromAtlas = (evt) => {
     if (!evt) return;
     setSelectedEvent(evt);
@@ -1458,7 +1480,7 @@ export default function TimelineCanvas() {
       flexDirection: 'column'
     }}>
 
-      {/* DOCK FLOTTANT SUPÉRIEUR NEUMORPHIQUE (ADAPTATIF MOBILE / DESKTOP) */}
+      {/* DOCK FLOTTANT SUPÉRIEUR NEUMORPHIQUE */}
       <header style={{
         height: HEADER_H,
         minHeight: HEADER_H,
@@ -1478,7 +1500,6 @@ export default function TimelineCanvas() {
 
         {isMobileScreen ? (
           <>
-            {/* LIGNE 1 MOBILE : Actions à gauche + Contrôles Carte à droite */}
             <div style={{
               width: '100%',
               display: 'flex',
@@ -1557,6 +1578,32 @@ export default function TimelineCanvas() {
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 20h9" />
                         <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                      </svg>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStartDrawTerritory(activeSelection)}
+                      title={`Dessiner le territoire de "${activeSelection.titre}"`}
+                      style={{
+                        width: btnSize,
+                        height: btnSize,
+                        borderRadius: '50%',
+                        backgroundColor: '#eaf0f6',
+                        border: '1px solid rgba(255, 255, 255, 0.8)',
+                        boxShadow: drawingTerritoryEvent?.id === activeSelection.id
+                          ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
+                          : '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
+                        color: activeSelection.zone_geojson ? '#0284c7' : '#0f766e',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0
+                      }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
                       </svg>
                     </button>
 
@@ -1686,7 +1733,6 @@ export default function TimelineCanvas() {
               </div>
             </div>
 
-            {/* LIGNE 2 MOBILE : Sélecteur de chapitres pleine largeur */}
             <div style={{
               width: '100%',
               display: 'flex',
@@ -1729,7 +1775,6 @@ export default function TimelineCanvas() {
           </>
         ) : (
           <>
-            {/* DESKTOP : Disposition horizontale en une ligne */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
                 type="button"
@@ -1802,6 +1847,32 @@ export default function TimelineCanvas() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 20h9" />
                       <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleStartDrawTerritory(activeSelection)}
+                    title={`Dessiner le territoire de "${activeSelection.titre}"`}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      backgroundColor: '#eaf0f6',
+                      border: '1px solid rgba(255, 255, 255, 0.8)',
+                      boxShadow: drawingTerritoryEvent?.id === activeSelection.id
+                        ? 'inset 2px 2px 5px rgba(166, 180, 200, 0.65), inset -2px -2px 5px rgba(255, 255, 255, 0.9)'
+                        : '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
+                      color: activeSelection.zone_geojson ? '#0284c7' : '#0f766e',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
                     </svg>
                   </button>
 
@@ -2000,6 +2071,9 @@ export default function TimelineCanvas() {
               mapLayers={mapLayers}
               isReliefProp={isReliefActive}
               recalibrateTrigger={recalibrateTrigger}
+              drawingEvent={drawingTerritoryEvent}
+              onSaveTerritory={handleSaveTerritory}
+              onCancelDrawing={() => setDrawingTerritoryEvent(null)}
             />
           </div>
         )}
@@ -2073,6 +2147,8 @@ export default function TimelineCanvas() {
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         event={drawerEvent}
+        onStartDrawTerritory={handleStartDrawTerritory}
+        onDeleteTerritory={handleDeleteTerritory}
       />
 
       <FilterDrawer

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, Polygon, Polyline, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { formatYear } from '../utils/timelineMath.js';
@@ -89,7 +89,6 @@ const SILK_ROAD_GEOJSON = {
   ]
 };
 
-// Pastille circulaire neumorphique avec anneau pulsatif doux
 function createNeuMarkerIcon(color = '#0284c7', isSelected = false) {
   const size = isSelected ? 22 : 18;
   const coreSize = isSelected ? 10 : 8;
@@ -209,14 +208,62 @@ function findEntityMeta(rawName) {
   return null;
 }
 
-function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract }) {
+function extractTerritoryDataFromGeojson(rawGeo) {
+  if (!rawGeo) return { polygons: [], links: [] };
+  let parsed = rawGeo;
+  if (typeof rawGeo === 'string') {
+    try {
+      parsed = JSON.parse(rawGeo);
+    } catch {
+      return { polygons: [], links: [] };
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') return { polygons: [], links: [] };
+
+  const links = Array.isArray(parsed.properties?.links) ? parsed.properties.links : [];
+  const geometry = parsed.type === 'Feature' ? parsed.geometry : parsed;
+  if (!geometry || !geometry.type || !Array.isArray(geometry.coordinates)) {
+    return { polygons: [], links };
+  }
+
+  if (geometry.type === 'Polygon') {
+    const ring = geometry.coordinates[0] || [];
+    const pts = ring.map(c => [c[1], c[0]]);
+    if (pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) {
+      pts.pop();
+    }
+    return { polygons: pts.length >= 3 ? [pts] : [], links };
+  }
+
+  if (geometry.type === 'MultiPolygon') {
+    const polygons = geometry.coordinates
+      .map(polyCoords => {
+        const ring = polyCoords[0] || [];
+        const pts = ring.map(c => [c[1], c[0]]);
+        if (pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) {
+          pts.pop();
+        }
+        return pts;
+      })
+      .filter(pts => pts.length >= 3);
+    return { polygons, links };
+  }
+
+  return { polygons: [], links };
+}
+
+function DynamicMapBridge({ boundingBoxCoords, isManualOverride, isDrawing, onUserInteract }) {
   const map = useMap();
   const lastCenterKeyRef = useRef('');
   const debounceTimerRef = useRef(null);
 
   useMapEvents({
-    dragstart: () => onUserInteract(),
-    zoomstart: () => onUserInteract()
+    dragstart: () => {
+      if (!isDrawing) onUserInteract();
+    },
+    zoomstart: () => {
+      if (!isDrawing) onUserInteract();
+    }
   });
 
   useEffect(() => {
@@ -227,7 +274,7 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract 
   }, [map]);
 
   useEffect(() => {
-    if (isManualOverride || boundingBoxCoords.length === 0) return;
+    if (isManualOverride || isDrawing || boundingBoxCoords.length === 0) return;
 
     const bounds = L.latLngBounds(boundingBoxCoords);
     if (!bounds.isValid()) return;
@@ -256,8 +303,19 @@ function DynamicMapBridge({ boundingBoxCoords, isManualOverride, onUserInteract 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [map, boundingBoxCoords, isManualOverride]);
+  }, [map, boundingBoxCoords, isManualOverride, isDrawing]);
 
+  return null;
+}
+
+function GlobalDrawHandler({ isDrawing, onAddPoint }) {
+  useMapEvents({
+    click(e) {
+      if (isDrawing) {
+        onAddPoint([Number(e.latlng.lat.toFixed(5)), Number(e.latlng.lng.toFixed(5))]);
+      }
+    }
+  });
   return null;
 }
 
@@ -271,7 +329,10 @@ export default function HistoricalAtlas({
   onMapYearChange,
   mapLayers = { worldEmpires: true, subDivisions: true, tradeRoutes: false, markers: true },
   isReliefProp = false,
-  recalibrateTrigger = 0
+  recalibrateTrigger = 0,
+  drawingEvent = null,
+  onSaveTerritory,
+  onCancelDrawing
 }) {
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [worldGeoJson, setWorldGeoJson] = useState(null);
@@ -280,6 +341,35 @@ export default function HistoricalAtlas({
   const [isLoadingBorders, setIsLoadingBorders] = useState(false);
   const mapRef = useRef(null);
   const cacheRef = useRef({});
+
+  // États du dessin multi-polygones + liens associés
+  const [completedPolygons, setCompletedPolygons] = useState([]);
+  const [currentPoints, setCurrentPoints] = useState([]);
+  const [territoryLinks, setTerritoryLinks] = useState([]);
+  const [linkTitleInput, setLinkTitleInput] = useState('');
+  const [linkUrlInput, setLinkUrlInput] = useState('');
+  const [isAddingLink, setIsAddingLink] = useState(false);
+  const [isSavingZone, setIsSavingZone] = useState(false);
+
+  const isDrawingMode = Boolean(drawingEvent);
+
+  useEffect(() => {
+    if (drawingEvent) {
+      const { polygons, links } = extractTerritoryDataFromGeojson(drawingEvent.zone_geojson);
+      setCompletedPolygons(polygons);
+      setTerritoryLinks(links);
+      setCurrentPoints([]);
+      setLinkTitleInput('');
+      setLinkUrlInput('');
+      setIsAddingLink(false);
+      setIsManualOverride(true);
+    } else {
+      setCompletedPolygons([]);
+      setTerritoryLinks([]);
+      setCurrentPoints([]);
+      setIsAddingLink(false);
+    }
+  }, [drawingEvent]);
 
   const currentCenterYear = useMemo(() => {
     if (typeof targetDate === 'number') return targetDate;
@@ -396,6 +486,34 @@ export default function HistoricalAtlas({
     });
   }, [events, viewRange]);
 
+  // Territoires personnalisés synchronisés avec le curseur vertical de la frise
+  const customTerritories = useMemo(() => {
+    const span = viewRange ? Math.max(1, viewRange.max - viewRange.min) : 500;
+    const pointTolerance = Math.max(1, Math.round(span * 0.015));
+
+    return events
+      .filter(evt => {
+        if (!evt.zone_geojson) return false;
+        if (drawingEvent && evt.id === drawingEvent.id) return false;
+
+        const hasEnd = evt.date_fin !== null && evt.date_fin !== undefined && evt.date_fin !== '';
+        if (hasEnd) {
+          return currentCenterYear >= evt.date_debut && currentCenterYear <= evt.date_fin;
+        }
+        return Math.abs(currentCenterYear - evt.date_debut) <= pointTolerance;
+      })
+      .map(evt => {
+        const { polygons, links } = extractTerritoryDataFromGeojson(evt.zone_geojson);
+        return {
+          event: evt,
+          polygons,
+          links,
+          color: evt.couleur || '#0284c7'
+        };
+      })
+      .filter(item => item.polygons.length > 0);
+  }, [events, currentCenterYear, viewRange, drawingEvent]);
+
   const activePoints = useMemo(() => {
     const points = [];
 
@@ -434,8 +552,14 @@ export default function HistoricalAtlas({
   }, [activeEvents]);
 
   const combinedBoundsCoords = useMemo(() => {
-    return activePoints.map(p => [p.latitude, p.longitude]);
-  }, [activePoints]);
+    const coords = activePoints.map(p => [p.latitude, p.longitude]);
+    customTerritories.forEach(t => {
+      t.polygons.forEach(poly => {
+        poly.forEach(pt => coords.push(pt));
+      });
+    });
+    return coords;
+  }, [activePoints, customTerritories]);
 
   const handleRecalibrate = () => {
     setIsManualOverride(false);
@@ -458,7 +582,94 @@ export default function HistoricalAtlas({
     }
   }, [recalibrateTrigger]);
 
+  // Actions de dessin multi-formes
+  const handleAddDraftPoint = (latlng) => {
+    setCurrentPoints(prev => [...prev, latlng]);
+  };
+
+  const handleUndoPoint = () => {
+    if (currentPoints.length > 0) {
+      setCurrentPoints(prev => prev.slice(0, -1));
+    } else if (completedPolygons.length > 0) {
+      const lastPoly = completedPolygons[completedPolygons.length - 1];
+      setCompletedPolygons(prev => prev.slice(0, -1));
+      setCurrentPoints(lastPoly);
+    }
+  };
+
+  const handleValidateCurrentShape = () => {
+    if (currentPoints.length < 3) return;
+    setCompletedPolygons(prev => [...prev, currentPoints]);
+    setCurrentPoints([]);
+  };
+
+  const handleClearAllShapes = () => {
+    setCompletedPolygons([]);
+    setCurrentPoints([]);
+  };
+
+  const handleAddTerritoryLink = (e) => {
+    e.preventDefault();
+    const rawUrl = linkUrlInput.trim();
+    if (!rawUrl) return;
+    const formattedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    const newLink = {
+      id: Date.now(),
+      titre: linkTitleInput.trim() || formattedUrl,
+      url: formattedUrl
+    };
+    setTerritoryLinks(prev => [...prev, newLink]);
+    setLinkTitleInput('');
+    setLinkUrlInput('');
+    setIsAddingLink(false);
+  };
+
+  const handleRemoveTerritoryLink = (linkId) => {
+    setTerritoryLinks(prev => prev.filter(l => l.id !== linkId));
+  };
+
+  const handleConfirmSaveTerritory = async () => {
+    if (!drawingEvent || !onSaveTerritory) return;
+
+    const allPolys = currentPoints.length >= 3
+      ? [...completedPolygons, currentPoints]
+      : [...completedPolygons];
+
+    setIsSavingZone(true);
+
+    if (allPolys.length === 0) {
+      await onSaveTerritory(drawingEvent.id, null);
+      setIsSavingZone(false);
+      return;
+    }
+
+    const closedRings = allPolys.map(poly => {
+      const coords = poly.map(pt => [pt[1], pt[0]]);
+      coords.push(coords[0]);
+      return [coords];
+    });
+
+    const geojsonPayload = {
+      type: 'Feature',
+      properties: {
+        name: drawingEvent.titre,
+        couleur: drawingEvent.couleur || '#0284c7',
+        date_debut: drawingEvent.date_debut,
+        date_fin: drawingEvent.date_fin ?? drawingEvent.date_debut,
+        links: territoryLinks
+      },
+      geometry: closedRings.length === 1
+        ? { type: 'Polygon', coordinates: closedRings[0] }
+        : { type: 'MultiPolygon', coordinates: closedRings }
+    };
+
+    await onSaveTerritory(drawingEvent.id, geojsonPayload);
+    setIsSavingZone(false);
+  };
+
   const currentBaseMap = isReliefProp ? BASE_MAPS.topo : BASE_MAPS.neutre;
+  const drawColor = drawingEvent?.couleur || '#0284c7';
+  const totalShapesCount = completedPolygons.length + (currentPoints.length >= 3 ? 1 : 0);
 
   if (isGeologyMode) {
     return (
@@ -474,9 +685,9 @@ export default function HistoricalAtlas({
   return (
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
-      onTouchStart={() => setIsManualOverride(true)}
-      onMouseDown={() => setIsManualOverride(true)}
-      onWheel={() => setIsManualOverride(true)}
+      onTouchStart={() => { if (!isDrawingMode) setIsManualOverride(true); }}
+      onMouseDown={() => { if (!isDrawingMode) setIsManualOverride(true); }}
+      onWheel={() => { if (!isDrawingMode) setIsManualOverride(true); }}
     >
       <style>{`
         @keyframes neuPulse {
@@ -487,7 +698,242 @@ export default function HistoricalAtlas({
           background: transparent;
           border: none;
         }
+        .leaflet-container.drawing-cursor {
+          cursor: crosshair !important;
+        }
       `}</style>
+
+      {/* BARRE FLOTTANTE DE DESSIN SUR LA CARTE GLOBALE */}
+      {isDrawingMode && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            backgroundColor: 'rgba(255, 255, 255, 0.96)',
+            backdropFilter: 'blur(10px)',
+            border: `1.5px solid ${drawColor}`,
+            borderRadius: 12,
+            padding: '8px 14px',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.18)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            maxWidth: '94vw',
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: drawColor }}>
+                Tracé territorial ({totalShapesCount} forme{totalShapesCount > 1 ? 's' : ''})
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#1c1917' }}>
+                {drawingEvent.titre} ({formatYear(drawingEvent.date_debut)}{drawingEvent.date_fin ? ` — ${formatYear(drawingEvent.date_fin)}` : ''})
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {currentPoints.length >= 3 && (
+                <button
+                  type="button"
+                  onClick={handleValidateCurrentShape}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 7,
+                    border: `1px solid ${drawColor}`,
+                    backgroundColor: '#f0f9ff',
+                    color: drawColor,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  + Nouvelle forme
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsAddingLink(prev => !prev)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: 7,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: isAddingLink ? '#e0f2fe' : '#ffffff',
+                  color: '#0284c7',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                + Lien ({territoryLinks.length})
+              </button>
+
+              {(currentPoints.length > 0 || completedPolygons.length > 0) && (
+                <button
+                  type="button"
+                  onClick={handleUndoPoint}
+                  style={{
+                    padding: '5px 9px',
+                    borderRadius: 7,
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#475569',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annuler point
+                </button>
+              )}
+
+              {(currentPoints.length > 0 || completedPolygons.length > 0) && (
+                <button
+                  type="button"
+                  onClick={handleClearAllShapes}
+                  style={{
+                    padding: '5px 9px',
+                    borderRadius: 7,
+                    border: '1px solid #fecaca',
+                    backgroundColor: '#fff1f2',
+                    color: '#e11d48',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Tout effacer
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleConfirmSaveTerritory}
+                disabled={isSavingZone}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 7,
+                  border: 'none',
+                  backgroundColor: '#15803d',
+                  color: '#ffffff',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {isSavingZone ? 'Sauvegarde...' : 'Enregistrer'}
+              </button>
+
+              <button
+                type="button"
+                onClick={onCancelDrawing}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 7,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#f8fafc',
+                  color: '#64748b',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+
+          {/* Ajout et liste des liens associés aux formes */}
+          {(isAddingLink || territoryLinks.length > 0) && (
+            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {isAddingLink && (
+                <form onSubmit={handleAddTerritoryLink} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    placeholder="Titre du lien (ex. Article Wikipédia)"
+                    value={linkTitleInput}
+                    onChange={(e) => setLinkTitleInput(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      fontSize: 11,
+                      outline: 'none'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="https://..."
+                    value={linkUrlInput}
+                    onChange={(e) => setLinkUrlInput(e.target.value)}
+                    style={{
+                      flex: 1.4,
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      fontSize: 11,
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      border: 'none',
+                      backgroundColor: '#0284c7',
+                      color: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Ajouter
+                  </button>
+                </form>
+              )}
+
+              {territoryLinks.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {territoryLinks.map(lk => (
+                    <span
+                      key={lk.id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        backgroundColor: '#f1f5f9',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: '#334155'
+                      }}
+                    >
+                      <span>{lk.titre}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTerritoryLink(lk.id)}
+                        style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 10, padding: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <MapContainer
         ref={mapRef}
@@ -495,12 +941,19 @@ export default function HistoricalAtlas({
         zoom={2}
         minZoom={1}
         zoomControl={false}
+        className={isDrawingMode ? 'drawing-cursor' : ''}
         style={{ width: '100%', height: '100%' }}
       >
         <DynamicMapBridge
           boundingBoxCoords={combinedBoundsCoords}
           isManualOverride={isManualOverride}
+          isDrawing={isDrawingMode}
           onUserInteract={() => setIsManualOverride(true)}
+        />
+
+        <GlobalDrawHandler
+          isDrawing={isDrawingMode}
+          onAddPoint={handleAddDraftPoint}
         />
 
         <TileLayer
@@ -514,6 +967,7 @@ export default function HistoricalAtlas({
           <GeoJSON
             key={`world-layer-${activeMapSlice || 'empty'}`}
             data={worldGeoJson}
+            interactive={!isDrawingMode}
             style={() => ({
               color: '#b45309',
               weight: 1.2,
@@ -540,6 +994,7 @@ export default function HistoricalAtlas({
           <GeoJSON
             key={`subdivisions-layer-${currentCenterYear}`}
             data={subDivisionsGeoJson}
+            interactive={!isDrawingMode}
             style={(feature) => {
               const name = extractFeatureName(feature?.properties);
               const color = getEntityColor(name);
@@ -559,6 +1014,7 @@ export default function HistoricalAtlas({
           <GeoJSON
             key="silk-road-layer"
             data={SILK_ROAD_GEOJSON}
+            interactive={!isDrawingMode}
             style={() => ({
               color: '#c2410c',
               weight: 3.2,
@@ -566,6 +1022,126 @@ export default function HistoricalAtlas({
               opacity: 0.95
             })}
           />
+        )}
+
+        {/* TERRITOIRES PERSONNALISÉS SYNCHRONISÉS AVEC LE CURSEUR VERTICAL */}
+        {customTerritories.map(({ event: evt, polygons, links, color }) => {
+          const isSelected = selectedEvent && selectedEvent.id === evt.id;
+          return polygons.map((polyCoords, idx) => (
+            <Polygon
+              key={`custom-zone-${evt.id}-${idx}`}
+              positions={polyCoords}
+              interactive={!isDrawingMode}
+              pathOptions={{
+                color: color,
+                weight: isSelected ? 3 : 2,
+                opacity: 0.95,
+                fillColor: color,
+                fillOpacity: isSelected ? 0.38 : 0.24
+              }}
+              eventHandlers={{
+                click: () => {
+                  if (!isDrawingMode && onSelectEvent) {
+                    onSelectEvent(evt);
+                  }
+                }
+              }}
+            >
+              <Popup autoPan={true} minWidth={200}>
+                <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", padding: 2 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: color, textTransform: 'uppercase', marginBottom: 2 }}>
+                    {formatYear(evt.date_debut)}{evt.date_fin ? ` — ${formatYear(evt.date_fin)}` : ''}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1c1917', marginBottom: links.length > 0 ? 8 : 4 }}>
+                    {evt.titre}
+                  </div>
+                  {links.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {links.map((lk, lIdx) => (
+                        <a
+                          key={lk.id || lIdx}
+                          href={lk.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'block',
+                            padding: '5px 8px',
+                            borderRadius: 6,
+                            backgroundColor: '#1c1917',
+                            color: '#ffffff',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            textAlign: 'center'
+                          }}
+                        >
+                          {lk.titre} ↗
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#78716c' }}>
+                      Aucun lien associé.
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            </Polygon>
+          ));
+        })}
+
+        {/* FORMES DÉJÀ VALIDÉES PENDANT LA SESSION DE DESSIN */}
+        {isDrawingMode && completedPolygons.map((polyCoords, idx) => (
+          <Polygon
+            key={`draft-completed-${idx}`}
+            positions={polyCoords}
+            interactive={false}
+            pathOptions={{
+              color: drawColor,
+              weight: 2.5,
+              fillColor: drawColor,
+              fillOpacity: 0.32
+            }}
+          />
+        ))}
+
+        {/* FORME EN COURS DE TRACÉ */}
+        {isDrawingMode && currentPoints.length > 0 && (
+          <>
+            {currentPoints.length >= 3 ? (
+              <Polygon
+                positions={currentPoints}
+                interactive={false}
+                pathOptions={{
+                  color: drawColor,
+                  weight: 2,
+                  dashArray: '6, 6',
+                  fillColor: drawColor,
+                  fillOpacity: 0.22
+                }}
+              />
+            ) : (
+              <Polyline
+                positions={currentPoints}
+                interactive={false}
+                pathOptions={{ color: drawColor, weight: 2, dashArray: '6, 6' }}
+              />
+            )}
+            {currentPoints.map((pt, idx) => (
+              <CircleMarker
+                key={`draft-pt-${idx}`}
+                center={pt}
+                radius={4.5}
+                interactive={false}
+                pathOptions={{
+                  color: '#ffffff',
+                  weight: 1.5,
+                  fillColor: drawColor,
+                  fillOpacity: 1
+                }}
+              />
+            ))}
+          </>
         )}
 
         {mapLayers.markers && activePoints.map(pt => {
@@ -577,9 +1153,10 @@ export default function HistoricalAtlas({
               key={pt.id}
               position={[pt.latitude, pt.longitude]}
               icon={createNeuMarkerIcon(markerColor, isSelected)}
+              interactive={!isDrawingMode}
               eventHandlers={{
                 click: () => {
-                  if (onSelectEvent) onSelectEvent(pt.event);
+                  if (!isDrawingMode && onSelectEvent) onSelectEvent(pt.event);
                 }
               }}
             >

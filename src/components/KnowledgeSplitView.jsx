@@ -1,53 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import { supabase } from '../supabase.js';
 import WikimediaPickerModal from './WikimediaPickerModal.jsx';
-import CityPicker from './CityPicker.jsx';
 
-const defaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-function MapController({ center, zoom }) {
-  const map = useMap();
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-      if (center && !isNaN(center[0]) && !isNaN(center[1])) {
-        map.setView(center, zoom);
-      }
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [map, center, zoom]);
-  return null;
-}
-
-export default function KnowledgeSplitView({ event, isOpen, onClose }) {
+export default function KnowledgeSplitView({ event, isOpen, onClose, onStartDrawTerritory, onDeleteTerritory }) {
   if (!isOpen || !event) return null;
 
   const [description, setDescription] = useState('');
   const [blocs, setBlocs] = useState([]);
   const [cartes, setCartes] = useState([]);
-  const [activeTab, setActiveTab] = useState('archives');
   const [previewCard, setPreviewCard] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
   const [groupEvents, setGroupEvents] = useState([]);
   const [loadingGroup, setLoadingGroup] = useState(false);
-
-  const [coords, setCoords] = useState({ latitude: null, longitude: null });
-  const [lieux, setLieux] = useState([]);
-  const [nouveauRole, setNouveauRole] = useState('');
-  const [villeSelectionnee, setVilleSelectionnee] = useState(null);
 
   const [isWikiPickerOpen, setIsWikiPickerOpen] = useState(false);
   const [isAddingDirectUrl, setIsAddingDirectUrl] = useState(false);
@@ -71,22 +37,6 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
         cartesList = [{ source: 'archive', titre: event.carte_legende || 'Document historique', url: event.carte_historique_url }];
       }
       setCartes(cartesList);
-      setActiveTab(cartesList.length > 0 ? 'archives' : 'moderne');
-
-      const listeLieux = Array.isArray(event.lieux) ? event.lieux : [];
-      setLieux(listeLieux);
-
-      const initialLat = event.latitude !== null && event.latitude !== undefined && !isNaN(event.latitude)
-        ? Number(event.latitude)
-        : (listeLieux[0] ? Number(listeLieux[0].latitude) : null);
-
-      const initialLng = event.longitude !== null && event.longitude !== undefined && !isNaN(event.longitude)
-        ? Number(event.longitude)
-        : (listeLieux[0] ? Number(listeLieux[0].longitude) : null);
-
-      setCoords({ latitude: initialLat, longitude: initialLng });
-      setVilleSelectionnee(null);
-      setNouveauRole('');
       setSaveMessage('');
 
       if (event.groupe_id) {
@@ -106,34 +56,32 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     }
   }, [event]);
 
-  const hasCoords = (coords.latitude !== null && coords.longitude !== null && !isNaN(coords.latitude)) || (lieux.length > 0);
-  const position = lieux.length > 0
-    ? [Number(lieux[0].latitude), Number(lieux[0].longitude)]
-    : (coords.latitude !== null ? [coords.latitude, coords.longitude] : [41.9028, 12.4964]);
-  const zoom = Number(event.zoom_niveau) || (hasCoords ? 6 : 4);
-
   const anneeAffichee = event.date_debut < 0
     ? `${Math.abs(event.date_debut)} BCE`
     : `${event.date_debut} CE`;
 
-  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description, updatedCoords = coords, updatedLieux = lieux) => {
+  const hasTerritory = Boolean(event.zone_geojson);
+  const polygonCount = React.useMemo(() => {
+    if (!event.zone_geojson || !event.zone_geojson.geometry) return 0;
+    if (event.zone_geojson.geometry.type === 'MultiPolygon') {
+      return event.zone_geojson.geometry.coordinates.length;
+    }
+    if (event.zone_geojson.geometry.type === 'Polygon') {
+      return 1;
+    }
+    return 0;
+  }, [event.zone_geojson]);
+
+  const handleSave = async (updatedBlocs = blocs, updatedCartes = cartes, updatedDesc = description) => {
     setIsSaving(true);
     setSaveMessage('');
-
-    const finalCoords = {
-      latitude: updatedLieux.length > 0 ? Number(updatedLieux[0].latitude) : updatedCoords.latitude,
-      longitude: updatedLieux.length > 0 ? Number(updatedLieux[0].longitude) : updatedCoords.longitude
-    };
 
     const payload = {
       description: updatedDesc.trim() || null,
       references_bento: updatedBlocs,
       cartes_historiques: updatedCartes,
       carte_historique_url: updatedCartes[0]?.url || null,
-      carte_legende: updatedCartes[0]?.titre || null,
-      latitude: finalCoords.latitude,
-      longitude: finalCoords.longitude,
-      lieux: updatedLieux
+      carte_legende: updatedCartes[0]?.titre || null
     };
 
     const { error } = await supabase
@@ -145,74 +93,20 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     if (error) {
       setSaveMessage('Erreur');
     } else {
-      setSaveMessage('Enregistré ✓');
+      setSaveMessage('Enregistré');
       event.description = payload.description;
       event.references_bento = payload.references_bento;
       event.cartes_historiques = payload.cartes_historiques;
       event.carte_historique_url = payload.carte_historique_url;
       event.carte_legende = payload.carte_legende;
-      event.latitude = payload.latitude;
-      event.longitude = payload.longitude;
-      event.lieux = payload.lieux;
-      setCoords(finalCoords);
       setTimeout(() => setSaveMessage(''), 2000);
     }
-  };
-
-  const handleLocationSelect = (loc) => {
-    if (!loc || loc.latitude === null) {
-      setVilleSelectionnee(null);
-      return;
-    }
-    setVilleSelectionnee(loc);
-  };
-
-  const handleAddLieu = (e) => {
-    if (e) e.preventDefault();
-    if (!villeSelectionnee) return;
-
-    const nomDetecte = villeSelectionnee.name 
-      || villeSelectionnee.nom 
-      || villeSelectionnee.ville 
-      || villeSelectionnee.label 
-      || (typeof villeSelectionnee === 'string' ? villeSelectionnee : 'Lieu');
-
-    const point = {
-      id: Date.now(),
-      nom: nomDetecte,
-      role: nouveauRole.trim() || 'Lieu associé',
-      latitude: Number(villeSelectionnee.latitude),
-      longitude: Number(villeSelectionnee.longitude)
-    };
-
-    const nextLieux = [...lieux, point];
-    setLieux(nextLieux);
-    setVilleSelectionnee(null);
-    setNouveauRole('');
-
-    const nextCoords = {
-      latitude: Number(point.latitude),
-      longitude: Number(point.longitude)
-    };
-    setCoords(nextCoords);
-    handleSave(blocs, cartes, description, nextCoords, nextLieux);
-  };
-
-  const handleRemoveLieu = (lieuId) => {
-    const nextLieux = lieux.filter(l => l.id !== lieuId);
-    setLieux(nextLieux);
-    const nextCoords = nextLieux.length > 0 
-      ? { latitude: Number(nextLieux[0].latitude), longitude: Number(nextLieux[0].longitude) }
-      : { latitude: null, longitude: null };
-    setCoords(nextCoords);
-    handleSave(blocs, cartes, description, nextCoords, nextLieux);
   };
 
   const handleSelectWikimedia = (nouvelleCarte) => {
     const nextList = [...cartes, nouvelleCarte];
     setCartes(nextList);
-    setActiveTab('archives');
-    handleSave(blocs, nextList, description, coords, lieux);
+    handleSave(blocs, nextList, description);
   };
 
   const handleAddDirectUrlSubmit = (e) => {
@@ -228,14 +122,13 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     setDirectCardUrl('');
     setDirectCardTitre('');
     setIsAddingDirectUrl(false);
-    setActiveTab('archives');
-    handleSave(blocs, nextList, description, coords, lieux);
+    handleSave(blocs, nextList, description);
   };
 
   const handleRemoveCard = (index) => {
     const nextList = cartes.filter((_, i) => i !== index);
     setCartes(nextList);
-    handleSave(blocs, nextList, description, coords, lieux);
+    handleSave(blocs, nextList, description);
   };
 
   const handleAddBlockSubmit = (e) => {
@@ -251,24 +144,23 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
     setBlocs(nextBlocs);
     setNewBlockType(null);
     setNewBlockContent({ titre: '', url: '', texte: '' });
-    handleSave(nextBlocs, cartes, description, coords, lieux);
+    handleSave(nextBlocs, cartes, description);
   };
 
   const handleRemoveBlock = (blockId) => {
     const nextBlocs = blocs.filter(b => b.id !== blockId);
     setBlocs(nextBlocs);
-    handleSave(nextBlocs, cartes, description, coords, lieux);
+    handleSave(nextBlocs, cartes, description);
   };
 
   return (
     <>
-      {/* Conteneur tiroir latéral droit (Slide-over drawer) */}
       <div
         style={{
           position: 'fixed',
           top: 0,
           right: 0,
-          width: 480,
+          width: 440,
           maxWidth: '92vw',
           height: '100vh',
           backgroundColor: '#faf7f2',
@@ -367,22 +259,88 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
           </div>
         </div>
 
-        {/* Corps déroulant empilé verticalement */}
+        {/* Corps déroulant */}
         <div
           style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            gap: 16,
+            gap: 14,
             padding: 16,
             overflowY: 'auto',
             boxSizing: 'border-box'
           }}
         >
-          {/* SECTION : ARCHIVES ET GÉOLOCALISATION */}
+          {/* SECTION : TERRITOIRE VECTORIEL SUR LA CARTE GLOBALE */}
           <div
             style={{
-              height: 280,
+              backgroundColor: '#ffffff',
+              borderRadius: 10,
+              border: '1px solid #e7ded0',
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexShrink: 0
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#57534e', textTransform: 'uppercase' }}>
+                Territoire sur la carte
+              </span>
+              <span style={{ fontSize: 11, color: hasTerritory ? '#15803d' : '#78716c', fontWeight: 600 }}>
+                {hasTerritory
+                  ? `${polygonCount} forme${polygonCount > 1 ? 's' : ''} tracée${polygonCount > 1 ? 's' : ''}`
+                  : 'Aucune zone tracée'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {onStartDrawTerritory && (
+                <button
+                  type="button"
+                  onClick={() => onStartDrawTerritory(event)}
+                  style={{
+                    padding: '6px 11px',
+                    borderRadius: 7,
+                    border: '1px solid #0284c7',
+                    backgroundColor: '#e0f2fe',
+                    color: '#0284c7',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {hasTerritory ? 'Redessiner' : 'Dessiner'}
+                </button>
+              )}
+              {hasTerritory && onDeleteTerritory && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteTerritory(event)}
+                  title="Supprimer les formes tracées"
+                  style={{
+                    padding: '6px 9px',
+                    borderRadius: 7,
+                    border: '1px solid #fecaca',
+                    backgroundColor: '#fff1f2',
+                    color: '#e11d48',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Supprimer
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* SECTION : ARCHIVES & DOCUMENTS */}
+          <div
+            style={{
+              height: 240,
               flexShrink: 0,
               backgroundColor: '#f3ece0',
               borderRadius: 10,
@@ -393,7 +351,6 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               position: 'relative'
             }}
           >
-            {/* Barre d'onglets */}
             <div
               style={{
                 display: 'flex',
@@ -406,80 +363,46 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                 flexShrink: 0
               }}
             >
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#1c1917' }}>
+                Archives ({cartes.length})
+              </span>
+
               <div style={{ display: 'flex', gap: 4 }}>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('archives')}
+                  onClick={() => setIsWikiPickerOpen(true)}
                   style={{
-                    padding: '3px 8px',
+                    padding: '2px 6px',
                     borderRadius: 5,
-                    border: 'none',
-                    fontSize: 11,
+                    border: '1px solid #0284c7',
+                    backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                    fontSize: 10,
                     fontWeight: 600,
-                    cursor: 'pointer',
-                    backgroundColor: activeTab === 'archives' ? '#ffffff' : 'transparent',
-                    color: activeTab === 'archives' ? '#1c1917' : '#78716c'
+                    color: '#0284c7',
+                    cursor: 'pointer'
                   }}
                 >
-                  Archives ({cartes.length})
+                  Wikimedia
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('moderne')}
+                  onClick={() => setIsAddingDirectUrl(!isAddingDirectUrl)}
                   style={{
-                    padding: '3px 8px',
+                    padding: '2px 6px',
                     borderRadius: 5,
-                    border: 'none',
-                    fontSize: 11,
+                    border: '1px solid #d6cebf',
+                    backgroundColor: '#ffffff',
+                    fontSize: 10,
                     fontWeight: 600,
-                    cursor: 'pointer',
-                    backgroundColor: activeTab === 'moderne' ? '#ffffff' : 'transparent',
-                    color: activeTab === 'moderne' ? '#1c1917' : '#78716c'
+                    color: '#57534e',
+                    cursor: 'pointer'
                   }}
                 >
-                  Carte
+                  {isAddingDirectUrl ? '✕' : '+ URL'}
                 </button>
               </div>
-
-              {activeTab === 'archives' && (
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button
-                    type="button"
-                    onClick={() => setIsWikiPickerOpen(true)}
-                    style={{
-                      padding: '2px 6px',
-                      borderRadius: 5,
-                      border: '1px solid #0284c7',
-                      backgroundColor: 'rgba(2, 132, 199, 0.1)',
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: '#0284c7',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Wikimedia
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingDirectUrl(!isAddingDirectUrl)}
-                    style={{
-                      padding: '2px 6px',
-                      borderRadius: 5,
-                      border: '1px solid #d6cebf',
-                      backgroundColor: '#ffffff',
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: '#57534e',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {isAddingDirectUrl ? '✕' : '+ URL'}
-                  </button>
-                </div>
-              )}
             </div>
 
-            {/* Formulaire manuel d'URL */}
             {isAddingDirectUrl && (
               <form
                 onSubmit={handleAddDirectUrlSubmit}
@@ -517,182 +440,77 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
               </form>
             )}
 
-            {/* Contenu : Galerie d'archives */}
-            {activeTab === 'archives' && (
-              <div style={{ flex: 1, overflowY: 'auto', padding: 8, backgroundColor: '#f5eee3', boxSizing: 'border-box' }}>
-                {cartes.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#78716c', fontSize: 11 }}>
-                    <span>Aucun document d'archive associé.</span>
+            <div style={{ flex: 1, overflowY: 'auto', padding: 8, backgroundColor: '#f5eee3', boxSizing: 'border-box' }}>
+              {cartes.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#78716c', fontSize: 11 }}>
+                  <span>Aucun document d'archive associé.</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsWikiPickerOpen(true)}
+                    style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid #0284c7', backgroundColor: '#ffffff', fontSize: 10, fontWeight: 600, color: '#0284c7', cursor: 'pointer' }}
+                  >
+                    Ouvrir Wikimedia
+                  </button>
+                </div>
+              ) : cartes.length === 1 ? (
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <img
+                    src={cartes[0].url}
+                    alt={cartes[0].titre}
+                    referrerPolicy="no-referrer"
+                    onClick={() => setPreviewCard(cartes[0])}
+                    style={{ maxWidth: '100%', maxHeight: '80%', objectFit: 'contain', borderRadius: 6, cursor: 'zoom-in' }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <span style={{ fontSize: 10, color: '#57534e', fontStyle: 'italic' }}>{cartes[0].titre}</span>
                     <button
                       type="button"
-                      onClick={() => setIsWikiPickerOpen(true)}
-                      style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid #0284c7', backgroundColor: '#ffffff', fontSize: 10, fontWeight: 600, color: '#0284c7', cursor: 'pointer' }}
+                      onClick={() => handleRemoveCard(0)}
+                      style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 11 }}
                     >
-                      Ouvrir Wikimedia
+                      ✕
                     </button>
                   </div>
-                ) : cartes.length === 1 ? (
-                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <img
-                      src={cartes[0].url}
-                      alt={cartes[0].titre}
-                      referrerPolicy="no-referrer"
-                      onClick={() => setPreviewCard(cartes[0])}
-                      style={{ maxWidth: '100%', maxHeight: '80%', objectFit: 'contain', borderRadius: 6, cursor: 'zoom-in' }}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                      <span style={{ fontSize: 10, color: '#57534e', fontStyle: 'italic' }}>{cartes[0].titre}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCard(0)}
-                        style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 11 }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ columnCount: 2, columnGap: 8 }}>
-                    {cartes.map((c, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          breakInside: 'avoid',
-                          marginBottom: 8,
-                          borderRadius: 6,
-                          overflow: 'hidden',
-                          backgroundColor: '#ffffff',
-                          border: '1px solid #e7ded0',
-                          position: 'relative'
-                        }}
-                      >
-                        <img
-                          src={c.url}
-                          alt={c.titre}
-                          referrerPolicy="no-referrer"
-                          onClick={() => setPreviewCard(c)}
-                          style={{ width: '100%', display: 'block', cursor: 'zoom-in' }}
-                        />
-                        <div style={{ padding: '4px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 9, color: '#44403c', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {c.titre}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveCard(idx)}
-                            style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 10 }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Contenu : Mini-carte Leaflet locale */}
-            {activeTab === 'moderne' && (
-              <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 6,
-                    left: 48,
-                    right: 6,
-                    zIndex: 1000,
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(8px)',
-                    padding: '6px 8px',
-                    borderRadius: 8,
-                    border: '1px solid #e7ded0',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4
-                  }}
-                >
-                  <CityPicker
-                    latitude={villeSelectionnee?.latitude || null}
-                    longitude={villeSelectionnee?.longitude || null}
-                    onLocationSelect={handleLocationSelect}
-                  />
-                  {villeSelectionnee && (
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        placeholder="Rôle (ex: Port...)"
-                        value={nouveauRole}
-                        onChange={(e) => setNouveauRole(e.target.value)}
-                        style={{ flex: 1, padding: '3px 6px', borderRadius: 4, border: '1px solid #d6cebf', fontSize: 10, outline: 'none' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddLieu}
-                        style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: '#b45309', color: '#ffffff', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        +
-                      </button>
-                    </div>
-                  )}
-                  {lieux.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, maxHeight: 40, overflowY: 'auto' }}>
-                      {lieux.map((l) => (
-                        <span
-                          key={l.id}
-                          style={{
-                            fontSize: 9,
-                            padding: '1px 5px',
-                            backgroundColor: '#f3ece0',
-                            borderRadius: 4,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 3
-                          }}
-                        >
-                          <strong>{l.nom}</strong>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLieu(l.id)}
-                            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#e11d48', fontSize: 9 }}
-                          >
-                            ✕
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
-
-                <MapContainer
-                  center={position}
-                  zoom={zoom}
-                  style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
-                >
-                  <MapController center={position} zoom={zoom} />
-                  <TileLayer
-                    attribution='Tiles &copy; Esri'
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
-                  />
-                  {lieux.map((l) => (
-                    <Marker key={l.id} position={[Number(l.latitude), Number(l.longitude)]} icon={defaultIcon}>
-                      <Popup>
-                        <strong>{l.nom}</strong>
-                        <br />
-                        <span style={{ fontSize: 11, color: '#b45309' }}>{l.role}</span>
-                      </Popup>
-                    </Marker>
+              ) : (
+                <div style={{ columnCount: 2, columnGap: 8 }}>
+                  {cartes.map((c, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        breakInside: 'avoid',
+                        marginBottom: 8,
+                        borderRadius: 6,
+                        overflow: 'hidden',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e7ded0',
+                        position: 'relative'
+                      }}
+                    >
+                      <img
+                        src={c.url}
+                        alt={c.titre}
+                        referrerPolicy="no-referrer"
+                        onClick={() => setPreviewCard(c)}
+                        style={{ width: '100%', display: 'block', cursor: 'zoom-in' }}
+                      />
+                      <div style={{ padding: '4px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 9, color: '#44403c', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.titre}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCard(idx)}
+                          style={{ border: 'none', background: 'transparent', color: '#e11d48', cursor: 'pointer', fontSize: 10 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
                   ))}
-                  {lieux.length === 0 && hasCoords && coords.latitude !== null && (
-                    <Marker position={[coords.latitude, coords.longitude]} icon={defaultIcon}>
-                      <Popup>
-                        <strong>{event.titre}</strong>
-                      </Popup>
-                    </Marker>
-                  )}
-                </MapContainer>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* SECTION : FIL CONDUCTEUR */}
@@ -908,7 +726,6 @@ export default function KnowledgeSplitView({ event, isOpen, onClose }) {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#1c1917' }}>
-                      {bloc.type === 'link' ? '🔗 ' : '📝 '}
                       {bloc.titre}
                     </span>
                     <button

@@ -27,7 +27,6 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
         pointerEvents: 'auto'
       }}
     >
-      {/* Flèche indicatrice sous la boîte */}
       <div
         style={{
           position: 'absolute',
@@ -42,7 +41,6 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
         }}
       />
 
-      {/* En-tête */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span
@@ -57,7 +55,7 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
               fontWeight: 700
             }}
           >
-            {event.date_fin ? '⏳ Période' : '📍 Événement'}
+            {event.date_fin ? 'Période' : 'Événement'}
           </span>
           <span style={{ fontSize: 11, color: '#78716c', fontWeight: 600 }}>
             {formatYear(event.date_debut)}
@@ -83,12 +81,10 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
         </button>
       </div>
 
-      {/* Titre */}
       <h3 style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#1c1917', fontSize: 14, lineHeight: 1.3 }}>
         {event.titre}
       </h3>
 
-      {/* Extrait descriptif */}
       <p
         style={{
           fontSize: 11,
@@ -104,7 +100,6 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
         {event.description || 'Aucune description rapide fournie.'}
       </p>
 
-      {/* Badges de tags */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
         {(event.tags || [event.categorie]).filter(Boolean).map(t => (
           <span
@@ -123,7 +118,6 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
         ))}
       </div>
 
-      {/* Pied : Bouton Approfondir */}
       <div
         style={{
           borderTop: '1px solid #e7ded0',
@@ -134,7 +128,7 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
         }}
       >
         <span style={{ fontSize: 10, color: '#a8a29e', fontWeight: 600 }}>
-          🏛️ {event.periode}
+          {event.periode}
         </span>
 
         <button
@@ -143,7 +137,6 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
             padding: '5px 12px',
             backgroundColor: '#b45309',
             color: '#ffffff',
@@ -155,8 +148,7 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
             boxShadow: '0 2px 6px rgba(180, 83, 9, 0.2)'
           }}
         >
-          <span>🔍</span>
-          <span>Approfondir</span>
+          Approfondir
         </button>
       </div>
     </div>
