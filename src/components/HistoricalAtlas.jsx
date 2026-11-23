@@ -343,7 +343,6 @@ export default function HistoricalAtlas({
   const mapRef = useRef(null);
   const cacheRef = useRef({});
 
-  // États du dessin multi-polygones + liens associés
   const [completedPolygons, setCompletedPolygons] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
   const [territoryLinks, setTerritoryLinks] = useState([]);
@@ -372,7 +371,6 @@ export default function HistoricalAtlas({
     }
   }, [drawingEvent]);
 
-  // Actions de dessin multi-formes
   const handleAddDraftPoint = (latlng) => {
     setCurrentPoints(prev => [...prev, latlng]);
   };
@@ -457,7 +455,6 @@ export default function HistoricalAtlas({
     setIsSavingZone(false);
   };
 
-  // Synchronisation de l'interface de dessin vers la sous-barre de TimelineCanvas
   useEffect(() => {
     if (!onDrawUiStateChange) return;
     const totalShapesCount = completedPolygons.length + (currentPoints.length >= 3 ? 1 : 0);
@@ -807,6 +804,16 @@ export default function HistoricalAtlas({
         .leaflet-container.drawing-cursor {
           cursor: crosshair !important;
         }
+        .leaflet-container *:focus,
+        .leaflet-interactive:focus,
+        .leaflet-container svg:focus,
+        .leaflet-container path:focus {
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        .leaflet-container {
+          -webkit-tap-highlight-color: transparent;
+        }
       `}</style>
 
       <MapContainer
@@ -898,7 +905,6 @@ export default function HistoricalAtlas({
           />
         )}
 
-        {/* TERRITOIRES PERSONNALISÉS SYNCHRONISÉS AVEC LE CURSEUR VERTICAL */}
         {customTerritories.map(({ event: evt, polygons, links, color }) => {
           const isSelected = selectedEvent && selectedEvent.id === evt.id;
           return polygons.map((polyCoords, idx) => (
@@ -964,7 +970,6 @@ export default function HistoricalAtlas({
           ));
         })}
 
-        {/* FORMES DÉJÀ VALIDÉES PENDANT LA SESSION DE DESSIN */}
         {isDrawingMode && completedPolygons.map((polyCoords, idx) => (
           <Polygon
             key={`draft-completed-${idx}`}
@@ -979,7 +984,6 @@ export default function HistoricalAtlas({
           />
         ))}
 
-        {/* FORME EN COURS DE TRACÉ */}
         {isDrawingMode && currentPoints.length > 0 && (
           <>
             {currentPoints.length >= 3 ? (

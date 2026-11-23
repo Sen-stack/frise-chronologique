@@ -37,7 +37,7 @@ export default function TimelineHeader({
         alignItems: 'center',
         justifyContent: isMobileScreen ? 'center' : 'space-between',
         gap: isMobileScreen ? 5 : 0,
-        padding: isMobileScreen ? '4px 8px 4px 40px' : '0 10px 0 44px',
+        padding: isMobileScreen ? '4px 8px 4px 42px' : '0 10px 0 46px',
         boxSizing: 'border-box',
         zIndex: 30,
         boxShadow: drawingTerritoryEvent ? 'none' : '0 4px 14px rgba(166, 180, 200, 0.35)',
@@ -576,7 +576,7 @@ export default function TimelineHeader({
 
       </header>
 
-      {/* SOUS-BARRE DE DESSIN SOUS LE BANDEAU SUPÉRIEUR */}
+      {/* SOUS-BARRE DE DESSIN COMPACTE (AVEC RETRAIT POUR LA LANGUETTE GAUCHE) */}
       {drawingTerritoryEvent && (
         <div
           ref={subBarRef}
@@ -584,12 +584,12 @@ export default function TimelineHeader({
             width: '100%',
             backgroundColor: '#f8fafc',
             borderBottom: `1.5px solid ${drawColor}`,
-            padding: isMobileScreen ? '6px 10px' : '6px 16px',
+            padding: isMobileScreen ? '5px 8px 5px 42px' : '5px 12px 5px 46px',
             boxSizing: 'border-box',
             zIndex: 28,
             display: 'flex',
             flexDirection: 'column',
-            gap: 6,
+            gap: 5,
             boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)'
           }}
         >
@@ -597,10 +597,10 @@ export default function TimelineHeader({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 6
+            gap: 6,
+            minHeight: 28
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
               <span style={{
                 width: 8,
                 height: 8,
@@ -614,132 +614,196 @@ export default function TimelineHeader({
                 color: '#1c1917',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: isMobileScreen ? '48vw' : '300px'
+                textOverflow: 'ellipsis'
               }}>
                 {drawingTerritoryEvent.titre}
               </span>
               <span style={{
                 fontSize: 10,
-                fontWeight: 600,
+                fontWeight: 700,
                 color: '#64748b',
-                whiteSpace: 'nowrap'
+                backgroundColor: '#e2e8f0',
+                padding: '1px 5px',
+                borderRadius: 6,
+                flexShrink: 0
               }}>
-                ({drawUiState.shapesCount} forme{drawUiState.shapesCount > 1 ? 's' : ''})
+                {drawUiState.shapesCount}
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              {drawUiState.canValidateShape && (
-                <button
-                  type="button"
-                  onClick={() => drawUiState.actions?.validateShape()}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: `1px solid ${drawColor}`,
-                    backgroundColor: '#f0f9ff',
-                    color: drawColor,
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  + Forme
-                </button>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              {/* Nouvelle forme */}
+              <button
+                type="button"
+                onClick={() => drawUiState.actions?.validateShape()}
+                disabled={!drawUiState.canValidateShape}
+                title="Valider cette forme et en tracer une nouvelle"
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 7,
+                  border: `1px solid ${drawUiState.canValidateShape ? drawColor : '#cbd5e1'}`,
+                  backgroundColor: drawUiState.canValidateShape ? '#f0f9ff' : '#f1f5f9',
+                  color: drawUiState.canValidateShape ? drawColor : '#94a3b8',
+                  cursor: drawUiState.canValidateShape ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="12 2 19 8 16 19 8 19 5 8 12 2" />
+                  <line x1="12" y1="8" x2="12" y2="14" />
+                  <line x1="9" y1="11" x2="15" y2="11" />
+                </svg>
+              </button>
 
+              {/* Ajouter un lien */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.toggleAddLink()}
+                title={`Associer un lien (${drawUiState.linksCount})`}
                 style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
+                  position: 'relative',
+                  width: 28,
+                  height: 28,
+                  borderRadius: 7,
                   border: '1px solid #cbd5e1',
                   backgroundColor: drawUiState.isAddingLink ? '#e0f2fe' : '#ffffff',
                   color: '#0284c7',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
                 }}
               >
-                + Lien ({drawUiState.linksCount})
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+                {drawUiState.linksCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    backgroundColor: '#0284c7',
+                    color: '#ffffff',
+                    fontSize: 8.5,
+                    fontWeight: 800,
+                    borderRadius: '50%',
+                    width: 14,
+                    height: 14,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {drawUiState.linksCount}
+                  </span>
+                )}
               </button>
 
-              {drawUiState.canUndo && (
-                <button
-                  type="button"
-                  onClick={() => drawUiState.actions?.undoPoint()}
-                  title="Annuler le dernier point"
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    color: '#475569',
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Annuler pt
-                </button>
-              )}
+              {/* Annuler dernier point */}
+              <button
+                type="button"
+                onClick={() => drawUiState.actions?.undoPoint()}
+                disabled={!drawUiState.canUndo}
+                title="Annuler le dernier point"
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 7,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: drawUiState.canUndo ? '#475569' : '#cbd5e1',
+                  cursor: drawUiState.canUndo ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 7v6h6" />
+                  <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+                </svg>
+              </button>
 
-              {drawUiState.canClear && (
-                <button
-                  type="button"
-                  onClick={() => drawUiState.actions?.clearAll()}
-                  title="Tout effacer"
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    border: '1px solid #fecaca',
-                    backgroundColor: '#fff1f2',
-                    color: '#e11d48',
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Effacer
-                </button>
-              )}
+              {/* Effacer tout */}
+              <button
+                type="button"
+                onClick={() => drawUiState.actions?.clearAll()}
+                disabled={!drawUiState.canClear}
+                title="Tout effacer"
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 7,
+                  border: '1px solid #fecaca',
+                  backgroundColor: drawUiState.canClear ? '#fff1f2' : '#f8fafc',
+                  color: drawUiState.canClear ? '#e11d48' : '#cbd5e1',
+                  cursor: drawUiState.canClear ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
 
+              {/* Enregistrer */}
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.save()}
                 disabled={drawUiState.isSaving}
+                title="Enregistrer le territoire"
                 style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 7,
                   border: 'none',
                   backgroundColor: '#15803d',
                   color: '#ffffff',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
                 }}
               >
-                {drawUiState.isSaving ? '...' : 'Enregistrer'}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
               </button>
 
+              {/* Fermer */}
               <button
                 type="button"
                 onClick={onCancelDrawing}
                 title="Fermer le mode dessin"
                 style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 7,
                   border: '1px solid #cbd5e1',
                   backgroundColor: '#ffffff',
                   color: '#64748b',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
                 }}
               >
-                ✕
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             </div>
           </div>
