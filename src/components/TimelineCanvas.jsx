@@ -63,7 +63,7 @@ export default function TimelineCanvas() {
   const [availableGroups, setAvailableGroups] = useState([]);
   const [newGroupInput, setNewGroupInput] = useState('');
 
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(() => window.innerWidth >= 768);
   const [selectedTags, setSelectedTags] = useState(() => {
     let hidden = [];
     try { hidden = JSON.parse(localStorage.getItem('chronos_hidden_tags') || '[]'); } catch {}
@@ -854,6 +854,7 @@ export default function TimelineCanvas() {
         onSelectChapter={handleSelectChapter}
         onResetFullView={handleResetToFullChapterView}
         onOpenCreateModal={handleOpenCreateModal}
+        onOpenFilterModal={() => setIsFilterOpen(true)}
         activeSelection={activeSelection}
         onOpenEditDrawer={handleOpenEditDrawer}
         onStartDrawTerritory={handleStartDrawTerritory}

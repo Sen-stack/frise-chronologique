@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatYear, DEFAULT_TAG_PALETTE } from '../utils/timelineMath.js';
 
 export default function FilterDrawer({
@@ -34,8 +34,15 @@ export default function FilterDrawer({
   onToggleMapLayer
 }) {
   const isLight = currentTheme === 'light';
-  const [isFilterSectionOpen, setIsFilterSectionOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [isFilterSectionOpen, setIsFilterSectionOpen] = useState(true);
   const [isLayersSectionOpen, setIsLayersSectionOpen] = useState(true);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const searchedEvents = events.filter(e =>
     (e.titre || '').toLowerCase().includes((searchQuery || '').toLowerCase())
@@ -50,232 +57,176 @@ export default function FilterDrawer({
   const areAllCustomSelected = events.length > 0 && customSelectedIds.size === events.length;
   const areNoCustomSelected = customSelectedIds.size === 0;
 
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        bottom: 0,
-        width: 300,
-        maxWidth: '85vw',
-        zIndex: 35,
-        backgroundColor: isLight ? 'rgba(250, 248, 245, 0.97)' : 'rgba(15, 23, 42, 0.96)',
-        backdropFilter: 'blur(20px)',
-        borderRight: isLight ? '1px solid rgba(180, 150, 120, 0.3)' : '1px solid #334155',
-        boxShadow: isOpen ? '10px 0 30px rgba(0, 0, 0, 0.1)' : 'none',
-        display: 'flex',
-        flexDirection: 'column',
-        transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-        transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
-        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-        color: isLight ? '#2b2118' : '#f8fafc',
-        userSelect: 'none'
-      }}
-    >
-      {/* Bouton replier / déplier */}
-      <button
-        type="button"
-        onClick={onToggleOpen}
-        title={isOpen ? "Replier le menu" : "Afficher le menu"}
-        style={{
-          position: 'absolute',
-          top: 86,
-          left: '100%',
-          width: 28,
-          height: 38,
-          backgroundColor: isLight ? 'rgba(250, 248, 245, 0.97)' : 'rgba(15, 23, 42, 0.96)',
-          backdropFilter: 'blur(16px)',
-          borderTop: isLight ? '1px solid rgba(180, 150, 120, 0.3)' : '1px solid #334155',
-          borderRight: isLight ? '1px solid rgba(180, 150, 120, 0.3)' : '1px solid #334155',
-          borderBottom: isLight ? '1px solid rgba(180, 150, 120, 0.3)' : '1px solid #334155',
-          borderLeft: 'none',
-          borderTopRightRadius: 8,
-          borderBottomRightRadius: 8,
-          boxShadow: '4px 3px 10px rgba(0, 0, 0, 0.12)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: isLight ? '#78350f' : '#38bdf8',
-          fontSize: 12,
-          fontWeight: 700,
-          zIndex: 36
-        }}
-      >
-        {isOpen ? '◀' : '▶'}
-      </button>
+  const baseBg = isLight ? '#eaf0f6' : '#0f172a';
+  const wellBg = isLight ? '#dfe6ee' : '#1e293b';
+  const textMain = isLight ? '#1e293b' : '#f8fafc';
+  const textMuted = isLight ? '#64748b' : '#94a3b8';
+  const accentColor = isLight ? '#5b4fe8' : '#38bdf8';
 
-      {/* En-tête avec titre et bouton Thème Jour / Nuit */}
+  const cardShadow = isLight
+    ? '4px 4px 10px rgba(166, 180, 200, 0.45), -4px -4px 10px rgba(255, 255, 255, 0.85)'
+    : '0 4px 12px rgba(0, 0, 0, 0.35)';
+
+  const insetShadow = isLight
+    ? 'inset 2px 2px 5px rgba(166, 180, 200, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.85)'
+    : 'inset 2px 2px 5px rgba(0, 0, 0, 0.4)';
+
+  const borderLight = isLight ? '1px solid rgba(255, 255, 255, 0.85)' : '1px solid #334155';
+
+  const innerContent = (
+    <>
+      {/* En-tête : CHRONOS + Bouton icône seule Jour/Nuit (+ Fermer sur mobile) */}
       <div
         style={{
-          padding: '20px 16px 14px 16px',
-          borderBottom: isLight ? '1px solid rgba(180, 150, 120, 0.2)' : '1px solid #1e293b',
+          padding: '16px 16px 12px 16px',
+          borderBottom: isLight ? '1px solid rgba(166, 180, 200, 0.35)' : '1px solid #1e293b',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between'
+          justifyContent: 'space-between',
+          flexShrink: 0
         }}
       >
-        <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isLight ? '#2b2118' : '#ffffff' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: textMain }}>
           CHRONOS
         </div>
 
-        {/* Bouton de bascule Jour / Nuit */}
-        <button
-          type="button"
-          onClick={() => setCurrentTheme && setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
-          style={{
-            padding: '5px 10px',
-            backgroundColor: isLight ? 'rgba(235, 227, 215, 0.7)' : '#1e293b',
-            color: isLight ? '#78350f' : '#38bdf8',
-            border: isLight ? '1px solid rgba(180, 150, 120, 0.35)' : '1px solid #334155',
-            borderRadius: 8,
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4
-          }}
-          title="Basculer le thème"
-        >
-          <span>{isLight ? '🌙' : '☀️'}</span>
-          <span>{isLight ? 'Nuit' : 'Jour'}</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setCurrentTheme && setCurrentTheme(t => (t === 'light' ? 'dark' : 'light'))}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              backgroundColor: baseBg,
+              color: accentColor,
+              border: borderLight,
+              boxShadow: cardShadow,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0
+            }}
+            title={isLight ? 'Mode sombre' : 'Mode clair'}
+          >
+            {isLight ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            )}
+          </button>
+
+          {isMobile && (
+            <button
+              type="button"
+              onClick={onToggleOpen}
+              title="Fermer"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                backgroundColor: baseBg,
+                color: textMuted,
+                border: borderLight,
+                boxShadow: cardShadow,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Corps du menu */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Corps déroulant */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-        {/* SECTION 1 : CALQUES DE L'ATLAS */}
+        {/* SECTION 1 : CALQUE */}
         <div
           style={{
-            borderRadius: 10,
-            border: isLight ? '1px solid rgba(180, 150, 120, 0.25)' : '1px solid #334155',
-            backgroundColor: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(30, 41, 59, 0.4)',
-            overflow: 'hidden'
+            borderRadius: 16,
+            border: borderLight,
+            backgroundColor: baseBg,
+            boxShadow: cardShadow,
+            overflow: 'hidden',
+            flexShrink: 0
           }}
         >
           <div
             onClick={() => setIsLayersSectionOpen(!isLayersSectionOpen)}
             style={{
-              padding: '12px 14px',
+              padding: '11px 14px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               cursor: 'pointer',
-              backgroundColor: isLight ? 'rgba(245, 240, 232, 0.6)' : 'rgba(30, 41, 59, 0.7)'
+              borderBottom: isLayersSectionOpen ? (isLight ? '1px solid rgba(166, 180, 200, 0.25)' : '1px solid #334155') : 'none'
             }}
           >
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: isLight ? '#78350f' : '#38bdf8' }}>
-              🗺️ Calques de l'Atlas
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: accentColor }}>
+              Calque
             </span>
-            <span style={{ fontSize: 10, color: isLight ? '#78716c' : '#94a3b8' }}>
+            <span style={{ fontSize: 10, color: textMuted }}>
               {isLayersSectionOpen ? '▲' : '▼'}
             </span>
           </div>
 
           {isLayersSectionOpen && (
-            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Option 1 : Frontières globales */}
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  backgroundColor: mapLayers.worldEmpires ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                  border: `1px solid ${mapLayers.worldEmpires ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
-                  fontSize: 11
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!mapLayers.worldEmpires}
-                  onChange={() => onToggleMapLayer && onToggleMapLayer('worldEmpires')}
-                  style={{ accentColor: '#b45309', cursor: 'pointer' }}
-                />
-                <span style={{ flex: 1, fontWeight: mapLayers.worldEmpires ? 600 : 400 }}>
-                  🏛️ Empires & Royaumes mondiaux
-                </span>
-              </label>
-
-              {/* Option 2 : Sous-divisions & peuples */}
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  backgroundColor: mapLayers.subDivisions ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                  border: `1px solid ${mapLayers.subDivisions ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
-                  fontSize: 11
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!mapLayers.subDivisions}
-                  onChange={() => onToggleMapLayer && onToggleMapLayer('subDivisions')}
-                  style={{ accentColor: '#0284c7', cursor: 'pointer' }}
-                />
-                <span style={{ flex: 1, fontWeight: mapLayers.subDivisions ? 600 : 400 }}>
-                  🛡️ Provinces & Peuples régionaux
-                </span>
-              </label>
-
-              {/* Option 3 : Voies de communication & Routes de la Soie */}
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  backgroundColor: mapLayers.tradeRoutes ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                  border: `1px solid ${mapLayers.tradeRoutes ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
-                  fontSize: 11
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!mapLayers.tradeRoutes}
-                  onChange={() => onToggleMapLayer && onToggleMapLayer('tradeRoutes')}
-                  style={{ accentColor: '#c2410c', cursor: 'pointer' }}
-                />
-                <span style={{ flex: 1, fontWeight: mapLayers.tradeRoutes ? 600 : 400 }}>
-                  🐪 Voies & Routes de la Soie
-                </span>
-              </label>
-
-              {/* Option 4 : Marqueurs d'événements */}
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  backgroundColor: mapLayers.markers ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                  border: `1px solid ${mapLayers.markers ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
-                  fontSize: 11
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!mapLayers.markers}
-                  onChange={() => onToggleMapLayer && onToggleMapLayer('markers')}
-                  style={{ accentColor: '#15803d', cursor: 'pointer' }}
-                />
-                <span style={{ flex: 1, fontWeight: mapLayers.markers ? 600 : 400 }}>
-                  📍 Jalons & Lieux d'événements
-                </span>
-              </label>
+            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {[
+                { key: 'worldEmpires', label: 'Empires & Royaumes mondiaux' },
+                { key: 'subDivisions', label: 'Provinces & Peuples régionaux' },
+                { key: 'tradeRoutes', label: 'Voies & Routes de la Soie' },
+                { key: 'markers', label: "Jalons & Lieux d'événements" }
+              ].map((layer) => {
+                const checked = !!mapLayers[layer.key];
+                return (
+                  <label
+                    key={layer.key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '7px 10px',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      backgroundColor: checked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.85)') : wellBg,
+                      boxShadow: checked ? '2px 2px 5px rgba(166, 180, 200, 0.35)' : 'none',
+                      fontSize: 11,
+                      color: textMain
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggleMapLayer && onToggleMapLayer(layer.key)}
+                      style={{ accentColor: accentColor, cursor: 'pointer' }}
+                    />
+                    <span style={{ flex: 1, fontWeight: checked ? 600 : 400 }}>
+                      {layer.label}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           )}
         </div>
@@ -283,27 +234,29 @@ export default function FilterDrawer({
         {/* SECTION 2 : FILTRES */}
         <div
           style={{
-            borderRadius: 10,
-            border: isLight ? '1px solid rgba(180, 150, 120, 0.25)' : '1px solid #334155',
-            backgroundColor: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(30, 41, 59, 0.4)',
-            overflow: 'hidden'
+            borderRadius: 16,
+            border: borderLight,
+            backgroundColor: baseBg,
+            boxShadow: cardShadow,
+            overflow: 'hidden',
+            flexShrink: 0
           }}
         >
           <div
             onClick={() => setIsFilterSectionOpen(!isFilterSectionOpen)}
             style={{
-              padding: '12px 14px',
+              padding: '11px 14px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               cursor: 'pointer',
-              backgroundColor: isLight ? 'rgba(245, 240, 232, 0.6)' : 'rgba(30, 41, 59, 0.7)'
+              borderBottom: isFilterSectionOpen ? (isLight ? '1px solid rgba(166, 180, 200, 0.25)' : '1px solid #334155') : 'none'
             }}
           >
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: isLight ? '#78350f' : '#38bdf8' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: accentColor }}>
               Filtres
             </span>
-            <span style={{ fontSize: 10, color: isLight ? '#78716c' : '#94a3b8' }}>
+            <span style={{ fontSize: 10, color: textMuted }}>
               {isFilterSectionOpen ? '▲' : '▼'}
             </span>
           </div>
@@ -314,67 +267,47 @@ export default function FilterDrawer({
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 1fr 1fr',
-                  padding: 2,
-                  gap: 3,
-                  backgroundColor: isLight ? 'rgba(235, 227, 215, 0.7)' : 'rgba(15, 23, 42, 0.7)',
-                  borderRadius: 8,
+                  padding: 3,
+                  gap: 4,
+                  backgroundColor: wellBg,
+                  boxShadow: insetShadow,
+                  borderRadius: 11,
                   marginBottom: 12
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('tags')}
-                  style={{
-                    padding: '6px 0',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: 'none',
-                    cursor: 'pointer',
-                    backgroundColor: filterMode === 'tags' ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: filterMode === 'tags' ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#78716c' : '#94a3b8')
-                  }}
-                >
-                  Tags
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('groups')}
-                  style={{
-                    padding: '6px 0',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: 'none',
-                    cursor: 'pointer',
-                    backgroundColor: filterMode === 'groups' ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: filterMode === 'groups' ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#78716c' : '#94a3b8')
-                  }}
-                >
-                  Thèmes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('custom')}
-                  style={{
-                    padding: '6px 0',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: 'none',
-                    cursor: 'pointer',
-                    backgroundColor: filterMode === 'custom' ? (isLight ? '#ffffff' : '#0284c7') : 'transparent',
-                    color: filterMode === 'custom' ? (isLight ? '#78350f' : '#ffffff') : (isLight ? '#78716c' : '#94a3b8')
-                  }}
-                >
-                  Unitaires
-                </button>
+                {[
+                  { id: 'tags', label: 'Tags' },
+                  { id: 'groups', label: 'Thèmes' },
+                  { id: 'custom', label: 'Unitaires' }
+                ].map(tab => {
+                  const active = filterMode === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setFilterMode(tab.id)}
+                      style={{
+                        padding: '6px 0',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        borderRadius: 8,
+                        border: 'none',
+                        cursor: 'pointer',
+                        backgroundColor: active ? (isLight ? '#eaf0f6' : '#0284c7') : 'transparent',
+                        color: active ? accentColor : textMuted,
+                        boxShadow: active && isLight ? '2px 2px 5px rgba(166, 180, 200, 0.5), -2px -2px 5px rgba(255, 255, 255, 0.9)' : 'none'
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
               </div>
 
               {filterMode === 'tags' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: isLight ? '#8c7e72' : '#94a3b8', textTransform: 'uppercase' }}>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, color: textMuted, textTransform: 'uppercase' }}>
                       Tags ({selectedTags.length}/{availableTags.length})
                     </span>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -382,15 +315,14 @@ export default function FilterDrawer({
                         type="button"
                         onClick={onSelectAllTags}
                         style={{
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                          border: '1px solid',
-                          fontSize: 9,
-                          fontWeight: 600,
+                          padding: '3px 7px',
+                          borderRadius: 7,
+                          border: 'none',
+                          fontSize: 9.5,
+                          fontWeight: 700,
                           cursor: 'pointer',
-                          borderColor: areAllTagsSelected ? '#b45309' : (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569'),
-                          backgroundColor: areAllTagsSelected ? '#b45309' : 'transparent',
-                          color: areAllTagsSelected ? '#ffffff' : (isLight ? '#78716c' : '#cbd5e1')
+                          backgroundColor: areAllTagsSelected ? accentColor : wellBg,
+                          color: areAllTagsSelected ? '#ffffff' : textMuted
                         }}
                       >
                         Tous
@@ -399,15 +331,14 @@ export default function FilterDrawer({
                         type="button"
                         onClick={onDeselectAllTags}
                         style={{
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                          border: '1px solid',
-                          fontSize: 9,
-                          fontWeight: 600,
+                          padding: '3px 7px',
+                          borderRadius: 7,
+                          border: 'none',
+                          fontSize: 9.5,
+                          fontWeight: 700,
                           cursor: 'pointer',
-                          borderColor: areNoTagsSelected ? '#b91c1c' : (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569'),
-                          backgroundColor: areNoTagsSelected ? '#b91c1c' : 'transparent',
-                          color: areNoTagsSelected ? '#ffffff' : (isLight ? '#78716c' : '#cbd5e1')
+                          backgroundColor: areNoTagsSelected ? '#e11d48' : wellBg,
+                          color: areNoTagsSelected ? '#ffffff' : textMuted
                         }}
                       >
                         Aucun
@@ -415,10 +346,11 @@ export default function FilterDrawer({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {/* Conteneur avec sa propre barre de scroll comme Unitaires */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto', paddingRight: 3 }}>
                     {availableTags.map(tag => {
                       const isChecked = selectedTags.includes(tag);
-                      const tagColor = (DEFAULT_TAG_PALETTE[tag] && DEFAULT_TAG_PALETTE[tag].stroke) || '#b45309';
+                      const tagColor = (DEFAULT_TAG_PALETTE[tag] && DEFAULT_TAG_PALETTE[tag].stroke) || accentColor;
                       return (
                         <div
                           key={tag}
@@ -427,12 +359,13 @@ export default function FilterDrawer({
                             display: 'flex',
                             alignItems: 'center',
                             gap: 8,
-                            padding: '6px 8px',
-                            borderRadius: 6,
-                            backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                            border: `1px solid ${isChecked ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
+                            padding: '6px 9px',
+                            borderRadius: 9,
+                            backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.85)') : wellBg,
+                            boxShadow: isChecked ? '2px 2px 5px rgba(166, 180, 200, 0.35)' : 'none',
                             cursor: 'pointer',
-                            fontSize: 11
+                            fontSize: 11,
+                            flexShrink: 0
                           }}
                         >
                           <input
@@ -441,8 +374,8 @@ export default function FilterDrawer({
                             readOnly
                             style={{ cursor: 'pointer', pointerEvents: 'none', accentColor: tagColor }}
                           />
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tagColor }} />
-                          <span style={{ flex: 1, fontWeight: isChecked ? 600 : 400, color: isLight ? '#2b2118' : '#f8fafc' }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: tagColor, flexShrink: 0 }} />
+                          <span style={{ flex: 1, fontWeight: isChecked ? 600 : 400, color: textMain }}>
                             {tag}
                           </span>
                         </div>
@@ -455,7 +388,7 @@ export default function FilterDrawer({
               {filterMode === 'groups' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: isLight ? '#8c7e72' : '#94a3b8', textTransform: 'uppercase' }}>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, color: textMuted, textTransform: 'uppercase' }}>
                       Thématiques ({selectedGroups.length}/{availableGroups.length})
                     </span>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -463,15 +396,14 @@ export default function FilterDrawer({
                         type="button"
                         onClick={onSelectAllGroups}
                         style={{
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                          border: '1px solid',
-                          fontSize: 9,
-                          fontWeight: 600,
+                          padding: '3px 7px',
+                          borderRadius: 7,
+                          border: 'none',
+                          fontSize: 9.5,
+                          fontWeight: 700,
                           cursor: 'pointer',
-                          borderColor: areAllGroupsSelected ? '#b45309' : (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569'),
-                          backgroundColor: areAllGroupsSelected ? '#b45309' : 'transparent',
-                          color: areAllGroupsSelected ? '#ffffff' : (isLight ? '#78716c' : '#cbd5e1')
+                          backgroundColor: areAllGroupsSelected ? accentColor : wellBg,
+                          color: areAllGroupsSelected ? '#ffffff' : textMuted
                         }}
                       >
                         Toutes
@@ -480,15 +412,14 @@ export default function FilterDrawer({
                         type="button"
                         onClick={onDeselectAllGroups}
                         style={{
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                          border: '1px solid',
-                          fontSize: 9,
-                          fontWeight: 600,
+                          padding: '3px 7px',
+                          borderRadius: 7,
+                          border: 'none',
+                          fontSize: 9.5,
+                          fontWeight: 700,
                           cursor: 'pointer',
-                          borderColor: areNoGroupsSelected ? '#b91c1c' : (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569'),
-                          backgroundColor: areNoGroupsSelected ? '#b91c1c' : 'transparent',
-                          color: areNoGroupsSelected ? '#ffffff' : (isLight ? '#78716c' : '#cbd5e1')
+                          backgroundColor: areNoGroupsSelected ? '#e11d48' : wellBg,
+                          color: areNoGroupsSelected ? '#ffffff' : textMuted
                         }}
                       >
                         Aucune
@@ -497,11 +428,11 @@ export default function FilterDrawer({
                   </div>
 
                   {availableGroups.length === 0 ? (
-                    <div style={{ fontSize: 11, color: isLight ? '#8c7e72' : '#94a3b8', fontStyle: 'italic', padding: '6px 2px' }}>
+                    <div style={{ fontSize: 11, color: textMuted, fontStyle: 'italic', padding: '6px 2px' }}>
                       Aucune thématique définie.
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto', paddingRight: 3 }}>
                       {availableGroups.map(grp => {
                         const isChecked = selectedGroups.includes(grp);
                         return (
@@ -512,21 +443,22 @@ export default function FilterDrawer({
                               display: 'flex',
                               alignItems: 'center',
                               gap: 8,
-                              padding: '6px 8px',
-                              borderRadius: 6,
-                              backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                              border: `1px solid ${isChecked ? (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569') : 'transparent'}`,
+                              padding: '6px 9px',
+                              borderRadius: 9,
+                              backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.85)') : wellBg,
+                              boxShadow: isChecked ? '2px 2px 5px rgba(166, 180, 200, 0.35)' : 'none',
                               cursor: 'pointer',
-                              fontSize: 11
+                              fontSize: 11,
+                              flexShrink: 0
                             }}
                           >
                             <input
                               type="checkbox"
                               checked={isChecked}
                               readOnly
-                              style={{ cursor: 'pointer', pointerEvents: 'none', accentColor: '#0284c7' }}
+                              style={{ cursor: 'pointer', pointerEvents: 'none', accentColor: accentColor }}
                             />
-                            <span style={{ flex: 1, fontWeight: isChecked ? 600 : 400, color: isLight ? '#2b2118' : '#f8fafc' }}>
+                            <span style={{ flex: 1, fontWeight: isChecked ? 600 : 400, color: textMain }}>
                               {grp}
                             </span>
                           </div>
@@ -547,18 +479,19 @@ export default function FilterDrawer({
                     style={{
                       width: '100%',
                       boxSizing: 'border-box',
-                      backgroundColor: isLight ? '#ffffff' : '#1e293b',
-                      border: isLight ? '1px solid rgba(180, 150, 120, 0.45)' : '1px solid #475569',
-                      borderRadius: 6,
-                      padding: '6px 8px',
-                      color: isLight ? '#2b2118' : '#f8fafc',
+                      backgroundColor: wellBg,
+                      boxShadow: insetShadow,
+                      border: 'none',
+                      borderRadius: 9,
+                      padding: '7px 10px',
+                      color: textMain,
                       fontSize: 11,
                       outline: 'none'
                     }}
                   />
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 9, color: isLight ? '#8c7e72' : '#94a3b8', fontWeight: 600 }}>
+                    <span style={{ fontSize: 9.5, color: textMuted, fontWeight: 700 }}>
                       {customSelectedIds.size} / {events.length}
                     </span>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -566,15 +499,14 @@ export default function FilterDrawer({
                         type="button"
                         onClick={onSelectAllCustom}
                         style={{
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                          border: '1px solid',
-                          fontSize: 9,
-                          fontWeight: 600,
+                          padding: '3px 7px',
+                          borderRadius: 7,
+                          border: 'none',
+                          fontSize: 9.5,
+                          fontWeight: 700,
                           cursor: 'pointer',
-                          borderColor: areAllCustomSelected ? '#b45309' : (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569'),
-                          backgroundColor: areAllCustomSelected ? '#b45309' : 'transparent',
-                          color: areAllCustomSelected ? '#ffffff' : (isLight ? '#78716c' : '#cbd5e1')
+                          backgroundColor: areAllCustomSelected ? accentColor : wellBg,
+                          color: areAllCustomSelected ? '#ffffff' : textMuted
                         }}
                       >
                         Tous
@@ -583,15 +515,14 @@ export default function FilterDrawer({
                         type="button"
                         onClick={onDeselectAllCustom}
                         style={{
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                          border: '1px solid',
-                          fontSize: 9,
-                          fontWeight: 600,
+                          padding: '3px 7px',
+                          borderRadius: 7,
+                          border: 'none',
+                          fontSize: 9.5,
+                          fontWeight: 700,
                           cursor: 'pointer',
-                          borderColor: areNoCustomSelected ? '#b91c1c' : (isLight ? 'rgba(180, 150, 120, 0.4)' : '#475569'),
-                          backgroundColor: areNoCustomSelected ? '#b91c1c' : 'transparent',
-                          color: areNoCustomSelected ? '#ffffff' : (isLight ? '#78716c' : '#cbd5e1')
+                          backgroundColor: areNoCustomSelected ? '#e11d48' : wellBg,
+                          color: areNoCustomSelected ? '#ffffff' : textMuted
                         }}
                       >
                         Rien
@@ -599,7 +530,7 @@ export default function FilterDrawer({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 180, overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto', paddingRight: 3 }}>
                     {searchedEvents.map(evt => {
                       const isChecked = customSelectedIds.has(evt.id);
                       return (
@@ -610,24 +541,24 @@ export default function FilterDrawer({
                             display: 'flex',
                             alignItems: 'center',
                             gap: 6,
-                            padding: '5px 6px',
-                            borderRadius: 6,
-                            backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)') : 'transparent',
-                            border: `1px solid ${isChecked ? (isLight ? 'rgba(180, 150, 120, 0.35)' : '#475569') : 'transparent'}`,
+                            padding: '6px 8px',
+                            borderRadius: 8,
+                            backgroundColor: isChecked ? (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.85)') : wellBg,
                             cursor: 'pointer',
-                            fontSize: 10
+                            fontSize: 10.5,
+                            flexShrink: 0
                           }}
                         >
                           <input
                             type="checkbox"
                             checked={isChecked}
                             readOnly
-                            style={{ accentColor: '#b45309', cursor: 'pointer', pointerEvents: 'none' }}
+                            style={{ accentColor: accentColor, cursor: 'pointer', pointerEvents: 'none' }}
                           />
-                          <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isChecked ? (isLight ? '#2b2118' : '#f8fafc') : (isLight ? '#8c7e72' : '#94a3b8') }}>
+                          <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isChecked ? textMain : textMuted, fontWeight: isChecked ? 600 : 400 }}>
                             {evt.titre}
                           </span>
-                          <span style={{ fontSize: 9, color: isLight ? '#8c7e72' : '#94a3b8' }}>
+                          <span style={{ fontSize: 9.5, color: textMuted }}>
                             {formatYear(evt.date_debut)}
                           </span>
                         </div>
@@ -642,6 +573,107 @@ export default function FilterDrawer({
         </div>
 
       </div>
+    </>
+  );
+
+  // Version mobile : pop-up modale uniquement quand ouverte
+  if (isMobile) {
+    if (!isOpen) return null;
+    return (
+      <div
+        onClick={onToggleOpen}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 60,
+          backgroundColor: 'rgba(15, 23, 42, 0.42)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: '100%',
+            maxWidth: 420,
+            maxHeight: '85dvh',
+            backgroundColor: baseBg,
+            borderRadius: 24,
+            border: borderLight,
+            boxShadow: '12px 12px 28px rgba(15, 23, 42, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+            color: textMain,
+            userSelect: 'none'
+          }}
+        >
+          {innerContent}
+        </div>
+      </div>
+    );
+  }
+
+  // Version navigateur PC : volet latéral gauche
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: 300,
+        maxWidth: '85vw',
+        zIndex: 35,
+        backgroundColor: baseBg,
+        borderRight: borderLight,
+        boxShadow: isOpen ? '8px 0 24px rgba(166, 180, 200, 0.45)' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
+        transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+        color: textMain,
+        userSelect: 'none'
+      }}
+    >
+      {/* Bouton replier / déplier */}
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        title={isOpen ? 'Replier le menu' : 'Afficher le menu'}
+        style={{
+          position: 'absolute',
+          top: 86,
+          left: '100%',
+          width: 28,
+          height: 38,
+          backgroundColor: baseBg,
+          borderTop: borderLight,
+          borderRight: borderLight,
+          borderBottom: borderLight,
+          borderLeft: 'none',
+          borderTopRightRadius: 10,
+          borderBottomRightRadius: 10,
+          boxShadow: '4px 3px 10px rgba(166, 180, 200, 0.45)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: accentColor,
+          fontSize: 12,
+          fontWeight: 700,
+          zIndex: 36
+        }}
+      >
+        {isOpen ? '◀' : '▶'}
+      </button>
+
+      {innerContent}
     </div>
   );
 }

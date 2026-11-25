@@ -8,6 +8,7 @@ export default function TimelineHeader({
   onSelectChapter,
   onResetFullView,
   onOpenCreateModal,
+  onOpenFilterModal,
   activeSelection,
   onOpenEditDrawer,
   onStartDrawTerritory,
@@ -87,7 +88,7 @@ export default function TimelineHeader({
         alignItems: 'center',
         justifyContent: isMobileScreen ? 'center' : 'space-between',
         gap: isMobileScreen ? 5 : 0,
-        padding: isMobileScreen ? '4px 8px 4px 42px' : '0 10px 0 46px',
+        padding: isMobileScreen ? '4px 8px' : '0 10px 0 46px',
         boxSizing: 'border-box',
         zIndex: 30,
         boxShadow: drawingTerritoryEvent ? 'none' : '0 4px 14px rgba(166, 180, 200, 0.35)',
@@ -103,6 +104,41 @@ export default function TimelineHeader({
               justifyContent: 'space-between'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {/* Bouton Filtrer style Fnac */}
+                <button
+                  type="button"
+                  onClick={onOpenFilterModal}
+                  title="Filtrer & Calques"
+                  style={{
+                    height: btnSize,
+                    padding: '0 9px',
+                    borderRadius: 14,
+                    backgroundColor: '#eaf0f6',
+                    border: '1px solid rgba(255, 255, 255, 0.85)',
+                    boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
+                    color: '#5b4fe8',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 10.5,
+                    fontWeight: 700
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="4" y1="21" x2="4" y2="14" />
+                    <line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" />
+                    <line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" />
+                    <line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                  <span>Filtrer</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={onResetFullView}
@@ -634,7 +670,7 @@ export default function TimelineHeader({
             width: '100%',
             backgroundColor: '#f8fafc',
             borderBottom: `1.5px solid ${drawColor}`,
-            padding: isMobileScreen ? '5px 8px 5px 42px' : '5px 12px 5px 46px',
+            padding: isMobileScreen ? '5px 8px' : '5px 12px 5px 46px',
             boxSizing: 'border-box',
             zIndex: 28,
             display: 'flex',
@@ -643,7 +679,6 @@ export default function TimelineHeader({
             boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)'
           }}
         >
-          {/* Ligne 1 : Outils de formes + Styles (Épaisseur & Pointillé) */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -651,7 +686,6 @@ export default function TimelineHeader({
             gap: 6,
             flexWrap: 'wrap'
           }}>
-            {/* Sélecteur des 5 formes */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 3, backgroundColor: '#e2e8f0', padding: 2, borderRadius: 8 }}>
               {tools.map(t => {
                 const isSelected = (drawUiState.activeTool || 'polygon') === t.id;
@@ -682,7 +716,6 @@ export default function TimelineHeader({
               })}
             </div>
 
-            {/* Sélecteur Épaisseur (Fin / Épais) + Tracé (Plein / Pointillé) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, backgroundColor: '#e2e8f0', padding: 2, borderRadius: 7 }}>
                 <button
@@ -779,7 +812,6 @@ export default function TimelineHeader({
               </div>
             </div>
 
-            {/* Actions (Valider forme, Lien, Annuler, Effacer, Enregistrer, Fermer) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{
                 fontSize: 10,
