@@ -8,8 +8,10 @@ export default function EventEditDrawer({
   onSave,
   onDelete,
   availableTags,
+  onDeleteTag = () => {},
   onToggleTag,
-  availableGroups = []
+  availableGroups = [],
+  onDeleteGroup = () => {}
 }) {
   const [formData, setFormData] = useState({
     titre: '',
@@ -56,6 +58,14 @@ export default function EventEditDrawer({
 
   if (!isOpen || !event) return null;
 
+  const handleAddGroupLocal = () => {
+    const val = newGroupInput.trim();
+    if (val) {
+      setFormData(prev => ({ ...prev, groupe_id: val }));
+      setNewGroupInput('');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSaving(true);
@@ -69,9 +79,12 @@ export default function EventEditDrawer({
       calculatedEnd = formData.ereFin === 'BCE' ? -Math.abs(endVal) : endVal;
     }
 
+    const pendingGroup = newGroupInput.trim();
+    const finalGroup = pendingGroup || (formData.groupe_id ? formData.groupe_id.trim() : null);
+
     const payload = {
       titre: formData.titre.trim(),
-      groupe_id: formData.groupe_id ? formData.groupe_id.trim() : null,
+      groupe_id: finalGroup,
       date_debut: calculatedStart,
       date_fin: calculatedEnd,
       couleur: formData.couleur,
@@ -186,41 +199,71 @@ export default function EventEditDrawer({
               {availableGroups.map((grp) => {
                 const isSelected = formData.groupe_id === grp;
                 return (
-                  <button
+                  <div
                     key={grp}
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, groupe_id: isSelected ? '' : grp }))}
                     style={{
-                      padding: '4px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
                       borderRadius: 14,
-                      border: 'none',
-                      fontSize: 11,
-                      fontWeight: 500,
-                      cursor: 'pointer',
                       backgroundColor: isSelected ? '#0284c7' : '#eae3d5',
                       color: isSelected ? '#ffffff' : '#44403c',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      overflow: 'hidden'
                     }}
                   >
-                    {grp} {isSelected ? '✓' : ''}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, groupe_id: isSelected ? '' : grp }))}
+                      style={{
+                        padding: '4px 6px 4px 10px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        color: 'inherit'
+                      }}
+                    >
+                      {grp} {isSelected ? '✓' : ''}
+                    </button>
+                    <button
+                      type="button"
+                      title="Supprimer cette thématique"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (formData.groupe_id === grp) {
+                          setFormData(prev => ({ ...prev, groupe_id: '' }));
+                        }
+                        onDeleteGroup(grp);
+                      }}
+                      style={{
+                        padding: '4px 8px 4px 4px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        color: 'inherit',
+                        opacity: 0.7
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 );
               })}
 
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <input
                   type="text"
+                  enterKeyHint="done"
                   placeholder="+ Nouveau fil"
                   value={newGroupInput}
                   onChange={(e) => setNewGroupInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      const val = newGroupInput.trim();
-                      if (val) {
-                        setFormData(prev => ({ ...prev, groupe_id: val }));
-                        setNewGroupInput('');
-                      }
+                      handleAddGroupLocal();
                     }
                   }}
                   style={{
@@ -233,6 +276,24 @@ export default function EventEditDrawer({
                     width: 110
                   }}
                 />
+                {newGroupInput.trim() && (
+                  <button
+                    type="button"
+                    onClick={handleAddGroupLocal}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 14,
+                      border: 'none',
+                      backgroundColor: '#0284c7',
+                      color: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✓
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -365,8 +426,8 @@ export default function EventEditDrawer({
               </div>
             </div>
           )}
-		  
-		  {/* Sélecteur d'apparence si période */}
+
+          {/* Sélecteur d'apparence si période */}
           {formData.isRange && (
             <div style={{
               backgroundColor: '#f3ece0',
@@ -680,40 +741,77 @@ export default function EventEditDrawer({
             </div>
           </div>
 
-          {/* Tags */}
+          {/* Tags (avec suppression ×) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
               Tags
             </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
               {availableTags.map((tag) => {
                 const active = formData.tags?.includes(tag);
                 return (
-                  <button
+                  <div
                     key={tag}
-                    type="button"
-                    onClick={() => {
-                      setFormData(prev => {
-                        const exists = prev.tags.includes(tag);
-                        return {
-                          ...prev,
-                          tags: exists ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
-                        };
-                      });
-                    }}
                     style={{
-                      padding: '3px 8px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
                       borderRadius: 12,
-                      border: 'none',
-                      fontSize: 10,
-                      fontWeight: 500,
-                      cursor: 'pointer',
                       backgroundColor: active ? '#b45309' : '#eae3d5',
-                      color: active ? '#ffffff' : '#44403c'
+                      color: active ? '#ffffff' : '#44403c',
+                      overflow: 'hidden'
                     }}
                   >
-                    {tag} {active ? '✓' : ''}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => {
+                          const exists = prev.tags.includes(tag);
+                          if (exists && prev.tags.length === 1) return prev;
+                          return {
+                            ...prev,
+                            tags: exists ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
+                          };
+                        });
+                      }}
+                      style={{
+                        padding: '3px 6px 3px 8px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: 10,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        color: 'inherit'
+                      }}
+                    >
+                      {tag} {active ? '✓' : ''}
+                    </button>
+                    {availableTags.length > 1 && (
+                      <button
+                        type="button"
+                        title="Supprimer ce tag"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormData(prev => {
+                            const filtered = prev.tags.filter(t => t !== tag);
+                            return { ...prev, tags: filtered.length > 0 ? filtered : prev.tags };
+                          });
+                          onDeleteTag(tag);
+                        }}
+                        style={{
+                          padding: '3px 7px 3px 3px',
+                          border: 'none',
+                          background: 'transparent',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          color: 'inherit',
+                          opacity: 0.7
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>

@@ -15,11 +15,13 @@ export default function EventModal({
   newTagInput,
   setNewTagInput,
   onAddNewTag,
+  onDeleteTag = () => {},
   onToggleTag,
   availableGroups = [],
   newGroupInput = '',
   setNewGroupInput = () => {},
-  onAddNewGroup = () => {}
+  onAddNewGroup = () => {},
+  onDeleteGroup = () => {}
 }) {
   if (!isOpen) return null;
 
@@ -119,7 +121,7 @@ export default function EventModal({
             />
           </div>
 
-          {/* Fil conducteur / Thématique (badges cliquables comme les tags + ajout) */}
+          {/* Fil conducteur / Thématique (badges cliquables + suppression + ajout mobile) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
               Fil conducteur (facultatif)
@@ -128,31 +130,62 @@ export default function EventModal({
               {availableGroups.map((grp) => {
                 const isSelected = formData.groupe_id === grp;
                 return (
-                  <button
+                  <div
                     key={grp}
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, groupe_id: isSelected ? '' : grp }))}
                     style={{
-                      padding: '4px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
                       borderRadius: 14,
-                      border: 'none',
-                      fontSize: 11,
-                      fontWeight: 500,
-                      cursor: 'pointer',
                       backgroundColor: isSelected ? '#0284c7' : '#eae3d5',
                       color: isSelected ? '#ffffff' : '#44403c',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      overflow: 'hidden'
                     }}
                   >
-                    {grp} {isSelected ? '✓' : ''}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, groupe_id: isSelected ? '' : grp }))}
+                      style={{
+                        padding: '4px 6px 4px 10px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        color: 'inherit'
+                      }}
+                    >
+                      {grp} {isSelected ? '✓' : ''}
+                    </button>
+                    <button
+                      type="button"
+                      title="Supprimer cette thématique"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteGroup(grp);
+                      }}
+                      style={{
+                        padding: '4px 8px 4px 4px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        color: 'inherit',
+                        opacity: 0.7
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 );
               })}
 
               {/* Champ d'ajout rapide de fil conducteur */}
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <input
                   type="text"
+                  enterKeyHint="done"
                   placeholder="+ Nouveau fil"
                   value={newGroupInput}
                   onChange={(e) => setNewGroupInput(e.target.value)}
@@ -172,6 +205,24 @@ export default function EventModal({
                     width: 110
                   }}
                 />
+                {newGroupInput.trim() && (
+                  <button
+                    type="button"
+                    onClick={onAddNewGroup}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 14,
+                      border: 'none',
+                      backgroundColor: '#0284c7',
+                      color: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✓
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -225,7 +276,8 @@ export default function EventModal({
               ⏳ Période
             </button>
           </div>
-		  {/* Sélecteur d'apparence de période (Préréglages + Style visuel PowerPoint) */}
+
+          {/* Sélecteur d'apparence de période */}
           {isRange && (
             <div style={{
               backgroundColor: '#f3ece0',
@@ -299,7 +351,6 @@ export default function EventModal({
                   Forme du tracé
                 </span>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
-                  {/* Option Bandeau */}
                   <div
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau' }))}
                     style={{
@@ -320,7 +371,6 @@ export default function EventModal({
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#44403c' }}>Bandeau</span>
                   </div>
 
-                  {/* Option Ligne fine */}
                   <div
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'ligne' }))}
                     style={{
@@ -343,7 +393,6 @@ export default function EventModal({
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#44403c' }}>Ligne |—|</span>
                   </div>
 
-                  {/* Option Ruban / Capsule */}
                   <div
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'ruban' }))}
                     style={{
@@ -368,7 +417,6 @@ export default function EventModal({
 
               {/* 3. Ligne Trait & Gravité */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 2 }}>
-                {/* Style de trait */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Tracé</span>
                   <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 2, borderRadius: 6 }}>
@@ -409,7 +457,6 @@ export default function EventModal({
                   </div>
                 </div>
 
-                {/* Gravité */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Gravité</span>
                   <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 2, borderRadius: 6 }}>
@@ -658,39 +705,72 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Tags */}
+          {/* Tags (avec suppression × et validation mobile ✓) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
               Tags
             </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
               {availableTags.map((tag) => {
                 const active = formData.tags?.includes(tag);
                 return (
-                  <button
+                  <div
                     key={tag}
-                    type="button"
-                    onClick={() => onToggleTag(tag)}
                     style={{
-                      padding: '4px 10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
                       borderRadius: 14,
-                      border: 'none',
-                      fontSize: 11,
-                      fontWeight: 500,
-                      cursor: 'pointer',
                       backgroundColor: active ? '#b45309' : '#eae3d5',
                       color: active ? '#ffffff' : '#44403c',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      overflow: 'hidden'
                     }}
                   >
-                    {tag} {active ? '✓' : ''}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleTag(tag)}
+                      style={{
+                        padding: '4px 6px 4px 10px',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        color: 'inherit'
+                      }}
+                    >
+                      {tag} {active ? '✓' : ''}
+                    </button>
+                    {availableTags.length > 1 && (
+                      <button
+                        type="button"
+                        title="Supprimer ce tag"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteTag(tag);
+                        }}
+                        style={{
+                          padding: '4px 8px 4px 4px',
+                          border: 'none',
+                          background: 'transparent',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          color: 'inherit',
+                          opacity: 0.7
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 );
               })}
 
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <input
                   type="text"
+                  enterKeyHint="done"
                   placeholder="+ Nouveau tag"
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
@@ -710,6 +790,24 @@ export default function EventModal({
                     width: 100
                   }}
                 />
+                {newTagInput.trim() && (
+                  <button
+                    type="button"
+                    onClick={onAddNewTag}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 14,
+                      border: 'none',
+                      backgroundColor: '#b45309',
+                      color: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✓
+                  </button>
+                )}
               </div>
             </div>
           </div>

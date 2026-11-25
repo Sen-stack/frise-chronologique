@@ -43,14 +43,30 @@ export default function TimelineCanvas() {
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState([]);
 
-  const [availableTags, setAvailableTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
+  const [hiddenDefaultTags, setHiddenDefaultTags] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('chronos_hidden_tags') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const [availableTags, setAvailableTags] = useState(() => {
+    let hidden = [];
+    try { hidden = JSON.parse(localStorage.getItem('chronos_hidden_tags') || '[]'); } catch {}
+    return Object.keys(DEFAULT_TAG_PALETTE).filter(t => !hidden.includes(t));
+  });
   const [newTagInput, setNewTagInput] = useState('');
 
   const [availableGroups, setAvailableGroups] = useState([]);
   const [newGroupInput, setNewGroupInput] = useState('');
 
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [selectedTags, setSelectedTags] = useState(Object.keys(DEFAULT_TAG_PALETTE));
+  const [selectedTags, setSelectedTags] = useState(() => {
+    let hidden = [];
+    try { hidden = JSON.parse(localStorage.getItem('chronos_hidden_tags') || '[]'); } catch {}
+    return Object.keys(DEFAULT_TAG_PALETTE).filter(t => !hidden.includes(t));
+  });
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [customSelectedIds, setCustomSelectedIds] = useState(new Set());
   const [filterMode, setFilterMode] = useState('tags');
@@ -241,7 +257,8 @@ export default function TimelineCanvas() {
         setEvents(data);
         setCustomSelectedIds(new Set(data.map(d => d.id)));
 
-        const extractedTags = new Set(Object.keys(DEFAULT_TAG_PALETTE));
+        const baseTags = Object.keys(DEFAULT_TAG_PALETTE).filter(t => !hiddenDefaultTags.includes(t));
+        const extractedTags = new Set(baseTags);
         const extractedGroups = new Set();
 
         data.forEach(item => {
@@ -558,6 +575,7 @@ export default function TimelineCanvas() {
       opacite: 0.85
     });
     setNewGroupInput('');
+    setNewTagInput('');
     setIsCreateModalOpen(true);
   };
 
@@ -591,8 +609,79 @@ export default function TimelineCanvas() {
       setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
       setSelectedEvent(updated);
       if (drawerEvent?.id === updated.id) setDrawerEvent(updated);
+      if (updated.groupe_id && !availableGroups.includes(updated.groupe_id)) {
+        setAvailableGroups(prev => [...prev, updated.groupe_id]);
+        setSelectedGroups(prev => [...prev, updated.groupe_id]);
+      }
       setIsEditDrawerOpen(false);
     }
+  };
+
+  const handleDeleteTag = async (tagToDelete) => {
+    const impactedEvents = events.filter(
+      e => (Array.isArray(e.tags) && e.tags.includes(tagToDelete)) || e.categorie === tagToDelete
+    );
+
+    if (impactedEvents.length > 0) {
+      if (!window.confirm(`Supprimer le tag "${tagToDelete}" ? Il sera retiré de ${impactedEvents.length} événement(s).`)) {
+        return;
+      }
+      for (const evt of impactedEvents) {
+        const nextTags = Array.isArray(evt.tags)
+          ? evt.tags.filter(t => t !== tagToDelete)
+          : [];
+        const finalTags = nextTags.length > 0 ? nextTags : ['Général'];
+        const { data } = await supabase
+          .from('evenements')
+          .update({ tags: finalTags, categorie: finalTags[0] })
+          .eq('id', evt.id)
+          .select();
+        if (data?.[0]) {
+          setEvents(prev => prev.map(item => item.id === data[0].id ? data[0] : item));
+        }
+      }
+    }
+
+    if (Object.keys(DEFAULT_TAG_PALETTE).includes(tagToDelete)) {
+      const nextHidden = Array.from(new Set([...hiddenDefaultTags, tagToDelete]));
+      setHiddenDefaultTags(nextHidden);
+      localStorage.setItem('chronos_hidden_tags', JSON.stringify(nextHidden));
+    }
+
+    const remainingTags = availableTags.filter(t => t !== tagToDelete);
+    setAvailableTags(remainingTags);
+    setSelectedTags(prev => prev.filter(t => t !== tagToDelete));
+    setFormData(prev => {
+      const filtered = prev.tags.filter(t => t !== tagToDelete);
+      return { ...prev, tags: filtered.length > 0 ? filtered : (remainingTags[0] ? [remainingTags[0]] : ['Général']) };
+    });
+  };
+
+  const handleDeleteGroup = async (groupToDelete) => {
+    const impactedEvents = events.filter(e => e.groupe_id === groupToDelete);
+
+    if (impactedEvents.length > 0) {
+      if (!window.confirm(`Supprimer la thématique "${groupToDelete}" ? Elle sera retirée de ${impactedEvents.length} événement(s).`)) {
+        return;
+      }
+      for (const evt of impactedEvents) {
+        const { data } = await supabase
+          .from('evenements')
+          .update({ groupe_id: null })
+          .eq('id', evt.id)
+          .select();
+        if (data?.[0]) {
+          setEvents(prev => prev.map(item => item.id === data[0].id ? data[0] : item));
+        }
+      }
+    }
+
+    setAvailableGroups(prev => prev.filter(g => g !== groupToDelete));
+    setSelectedGroups(prev => prev.filter(g => g !== groupToDelete));
+    setFormData(prev => ({
+      ...prev,
+      groupe_id: prev.groupe_id === groupToDelete ? '' : prev.groupe_id
+    }));
   };
 
   const handleStartDrawTerritory = (evt) => {
@@ -634,9 +723,29 @@ export default function TimelineCanvas() {
       if (calculatedEnd <= calculatedStart) return setFormError('L’année de fin doit être strictement après l’année de début.');
     }
 
+    // Validation automatique de ce qui est écrit dans les champs + Nouveau tag / + Nouveau fil même sans clic sur ✓
+    const pendingTag = newTagInput.trim();
+    const pendingGroup = newGroupInput.trim();
+
+    let nextTags = [...formData.tags];
+    if (pendingTag) {
+      if (!availableTags.includes(pendingTag)) {
+        setAvailableTags(prev => [...prev, pendingTag]);
+        setSelectedTags(prev => [...prev, pendingTag]);
+      }
+      if (!nextTags.includes(pendingTag)) {
+        nextTags.push(pendingTag);
+      }
+      setNewTagInput('');
+    }
+
+    const chosenGroup = pendingGroup || (formData.groupe_id ? formData.groupe_id.trim() : null);
+    if (pendingGroup) {
+      setNewGroupInput('');
+    }
+
     setIsSubmitting(true);
-    const chosenTags = formData.tags.length > 0 ? formData.tags : ["Général"];
-    const chosenGroup = formData.groupe_id ? formData.groupe_id.trim() : null;
+    const chosenTags = nextTags.length > 0 ? nextTags : ["Général"];
 
     const payload = {
       titre: formData.titre.trim(),
@@ -932,6 +1041,7 @@ export default function TimelineCanvas() {
           }
           setNewTagInput('');
         }}
+        onDeleteTag={handleDeleteTag}
         onToggleTag={(tag) => {
           setFormData(prev => {
             const exists = prev.tags.includes(tag);
@@ -955,6 +1065,7 @@ export default function TimelineCanvas() {
           setFormData(prev => ({ ...prev, groupe_id: trimmed }));
           setNewGroupInput('');
         }}
+        onDeleteGroup={handleDeleteGroup}
       />
 
       <EventEditDrawer
@@ -964,8 +1075,10 @@ export default function TimelineCanvas() {
         onSave={handleSaveFromDrawer}
         onDelete={handleDeleteEvent}
         availableTags={availableTags}
+        onDeleteTag={handleDeleteTag}
         onToggleTag={() => {}}
         availableGroups={availableGroups}
+        onDeleteGroup={handleDeleteGroup}
       />
 
     </div>
