@@ -10,7 +10,9 @@ import {
   yearToChapterMiniX,
   miniXToChapterYear,
   formatYear,
-  getAutoPeriod
+  getAutoPeriod,
+  getEventStartYear,
+  getEventEndYear
 } from '../utils/timelineMath.js';
 import { renderTimelineScene } from '../utils/timelineRenderer.js';
 
@@ -118,8 +120,12 @@ export default function TimelineCanvas() {
     groupe_id: '',
     anneeDebut: '',
     ereDebut: 'CE',
+    moisDebut: '',
+    jourDebut: '',
     anneeFin: '',
     ereFin: 'CE',
+    moisFin: '',
+    jourFin: '',
     tags: [Object.keys(DEFAULT_TAG_PALETTE)[0]],
     couleur: COLOR_PRESETS[0].stroke,
     importance: 3,
@@ -564,8 +570,12 @@ export default function TimelineCanvas() {
       groupe_id: '',
       anneeDebut: '',
       ereDebut: 'CE',
+      moisDebut: '',
+      jourDebut: '',
       anneeFin: '',
       ereFin: 'CE',
+      moisFin: '',
+      jourFin: '',
       tags: [availableTags[0] || Object.keys(DEFAULT_TAG_PALETTE)[0]],
       couleur: COLOR_PRESETS[0].stroke,
       importance: 3,
@@ -714,16 +724,24 @@ export default function TimelineCanvas() {
     const startVal = Number(formData.anneeDebut);
     if (isNaN(startVal) || formData.anneeDebut === '') return setFormError('L’année de début doit être un nombre valide.');
     const calculatedStart = formData.ereDebut === 'BCE' ? -Math.abs(startVal) : startVal;
+    const parsedMoisDebut = formData.moisDebut ? Number(formData.moisDebut) : null;
+    const parsedJourDebut = parsedMoisDebut && formData.jourDebut ? Number(formData.jourDebut) : null;
 
     let calculatedEnd = null;
+    let parsedMoisFin = null;
+    let parsedJourFin = null;
     if (isRange) {
       const endVal = Number(formData.anneeFin);
       if (isNaN(endVal) || formData.anneeFin === '') return setFormError('L’année de fin doit être un nombre valide.');
       calculatedEnd = formData.ereFin === 'BCE' ? -Math.abs(endVal) : endVal;
-      if (calculatedEnd <= calculatedStart) return setFormError('L’année de fin doit être strictement après l’année de début.');
+      parsedMoisFin = formData.moisFin ? Number(formData.moisFin) : null;
+      parsedJourFin = parsedMoisFin && formData.jourFin ? Number(formData.jourFin) : null;
+
+      const exactStart = calculatedStart + (parsedMoisDebut ? ((parsedMoisDebut - 1) * 30.4375 + (parsedJourDebut || 15)) / 365.25 : 0);
+      const exactEnd = calculatedEnd + (parsedMoisFin ? ((parsedMoisFin - 1) * 30.4375 + (parsedJourFin || 15)) / 365.25 : 0);
+      if (exactEnd <= exactStart) return setFormError('La date de fin doit être strictement après la date de début.');
     }
 
-    // Validation automatique de ce qui est écrit dans les champs + Nouveau tag / + Nouveau fil même sans clic sur ✓
     const pendingTag = newTagInput.trim();
     const pendingGroup = newGroupInput.trim();
 
@@ -751,7 +769,11 @@ export default function TimelineCanvas() {
       titre: formData.titre.trim(),
       groupe_id: chosenGroup,
       date_debut: calculatedStart,
+      mois_debut: parsedMoisDebut,
+      jour_debut: parsedJourDebut,
       date_fin: calculatedEnd,
+      mois_fin: parsedMoisFin,
+      jour_fin: parsedJourFin,
       tags: chosenTags,
       categorie: chosenTags[0],
       periode: getAutoPeriod(calculatedStart),
@@ -781,7 +803,9 @@ export default function TimelineCanvas() {
         setSelectedGroups(prev => [...prev, chosenGroup]);
       }
       setIsCreateModalOpen(false);
-      const centerYear = calculatedEnd ? (calculatedStart + calculatedEnd) / 2 : calculatedStart;
+      const exactStart = getEventStartYear(created);
+      const exactEnd = getEventEndYear(created);
+      const centerYear = exactEnd !== null ? (exactStart + exactEnd) / 2 : exactStart;
       const span = targetViewRef.current.max - targetViewRef.current.min;
       smoothSetView({ min: centerYear - span / 2, max: centerYear + span / 2 });
     }
@@ -794,8 +818,9 @@ export default function TimelineCanvas() {
     if (isDrawerOpen) setDrawerEvent(evt);
     if (isEditDrawerOpen) setEditingTargetEvent(evt);
 
-    const isPeriod = evt.date_fin !== null && evt.date_fin !== undefined && evt.date_fin !== '';
-    const centerYear = isPeriod ? (evt.date_debut + evt.date_fin) / 2 : evt.date_debut;
+    const exactStart = getEventStartYear(evt);
+    const exactEnd = getEventEndYear(evt);
+    const centerYear = exactEnd !== null ? (exactStart + exactEnd) / 2 : exactStart;
     setPopupPos({ x: window.innerWidth / 2, y: 120 });
 
     if (centerYear < viewRef.current.min || centerYear > viewRef.current.max) {
@@ -990,17 +1015,18 @@ export default function TimelineCanvas() {
         const span = viewRange.max - viewRange.min;
         if (span <= 0) return null;
 
-        const isPeriod = selectedEvent.date_fin !== null && selectedEvent.date_fin !== undefined;
-        const targetYear = isPeriod 
-          ? (Math.max(viewRange.min, selectedEvent.date_debut) + Math.min(viewRange.max, selectedEvent.date_fin)) / 2 
-          : selectedEvent.date_debut;
+        const exactStart = getEventStartYear(selectedEvent);
+        const exactEnd = getEventEndYear(selectedEvent);
+        const targetYear = exactEnd !== null
+          ? (Math.max(viewRange.min, exactStart) + Math.min(viewRange.max, exactEnd)) / 2 
+          : exactStart;
 
         const dynamicX = ((targetYear - viewRange.min) / span) * window.innerWidth;
         const subBarH = subBarRef.current ? subBarRef.current.offsetHeight : 0;
         const actualAtlasH = isAtlasOpen ? Math.round((window.innerHeight - HEADER_H - subBarH) * splitRatio) : 0;
         const absoluteTargetY = HEADER_H + subBarH + actualAtlasH + popupPos.y;
 
-        if ((selectedEvent.date_fin ?? selectedEvent.date_debut) < viewRange.min || selectedEvent.date_debut > viewRange.max) {
+        if ((exactEnd ?? exactStart) < viewRange.min || exactStart > viewRange.max) {
           return null;
         }
 

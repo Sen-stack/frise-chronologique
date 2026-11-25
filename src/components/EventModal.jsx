@@ -1,5 +1,215 @@
 import React from 'react';
-import { COLOR_PRESETS } from '../utils/timelineMath.js';
+import { COLOR_PRESETS, MONTHS_FR, formatDetailedDate } from '../utils/timelineMath.js';
+
+function HistoricalDateSelector({
+  label,
+  yearValue,
+  onYearChange,
+  eraValue,
+  onEraChange,
+  monthValue,
+  onMonthChange,
+  dayValue,
+  onDayChange,
+  required = false,
+  placeholderYear = '1918'
+}) {
+  const numericYear = yearValue === '' ? null : Number(yearValue);
+  const signedYear = numericYear !== null && !isNaN(numericYear)
+    ? (eraValue === 'BCE' ? -Math.abs(numericYear) : Math.abs(numericYear))
+    : null;
+
+  const selectedMonthObj = MONTHS_FR.find(m => m.value === Number(monthValue));
+  const maxDays = selectedMonthObj
+    ? (selectedMonthObj.value === 2 && numericYear && numericYear % 4 !== 0 ? 28 : selectedMonthObj.days)
+    : 31;
+
+  const stepYear = (delta) => {
+    const currentSigned = signedYear ?? 0;
+    let nextSigned = currentSigned + delta;
+    if (nextSigned === 0) nextSigned = delta > 0 ? 1 : -1;
+    onEraChange(nextSigned < 0 ? 'BCE' : 'CE');
+    onYearChange(String(Math.abs(nextSigned)));
+  };
+
+  const preview = signedYear !== null
+    ? formatDetailedDate(signedYear, monthValue || null, dayValue || null)
+    : '';
+
+  return (
+    <div style={{
+      backgroundColor: '#f3ece0',
+      border: '1px solid #dcd1be',
+      borderRadius: 12,
+      padding: '10px 12px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#57534e', textTransform: 'uppercase' }}>
+          {label}
+        </label>
+        {preview && (
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: '#b45309',
+            backgroundColor: '#ffffff',
+            padding: '2px 8px',
+            borderRadius: 8,
+            border: '1px solid #e7ded0'
+          }}>
+            📅 {preview}
+          </span>
+        )}
+      </div>
+
+      {/* Ligne 1 : Saisie année + Ère BCE / CE */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="number"
+          required={required}
+          placeholder={`Année (ex. ${placeholderYear})`}
+          value={yearValue}
+          onChange={(e) => onYearChange(e.target.value)}
+          style={{
+            flex: 1,
+            padding: '8px 10px',
+            borderRadius: 9,
+            border: '1px solid #d6cebf',
+            backgroundColor: '#ffffff',
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#1c1917',
+            outline: 'none',
+            boxSizing: 'border-box'
+          }}
+        />
+
+        <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 3, borderRadius: 9, width: 116, boxSizing: 'border-box' }}>
+          <button
+            type="button"
+            onClick={() => onEraChange('BCE')}
+            style={{
+              flex: 1,
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              backgroundColor: eraValue === 'BCE' ? '#ffffff' : 'transparent',
+              color: eraValue === 'BCE' ? '#b45309' : '#78716c',
+              boxShadow: eraValue === 'BCE' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
+            }}
+          >
+            BCE
+          </button>
+          <button
+            type="button"
+            onClick={() => onEraChange('CE')}
+            style={{
+              flex: 1,
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              backgroundColor: eraValue === 'CE' ? '#ffffff' : 'transparent',
+              color: eraValue === 'CE' ? '#b45309' : '#78716c',
+              boxShadow: eraValue === 'CE' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
+            }}
+          >
+            CE
+          </button>
+        </div>
+      </div>
+
+      {/* Ligne 2 : Navigation rapide entre les années */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
+        {[-100, -10, -1, 1, 10, 100].map((step) => (
+          <button
+            key={step}
+            type="button"
+            onClick={() => stepYear(step)}
+            style={{
+              padding: '4px 0',
+              borderRadius: 6,
+              border: '1px solid #d6cebf',
+              backgroundColor: '#faf7f2',
+              color: '#57534e',
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            {step > 0 ? `+${step}` : step}
+          </button>
+        ))}
+      </div>
+
+      {/* Ligne 3 : Mois et Jour (facultatifs) */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <select
+          value={monthValue || ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            onMonthChange(val);
+            if (!val) {
+              onDayChange('');
+            } else {
+              const mObj = MONTHS_FR.find(m => m.value === Number(val));
+              if (mObj && Number(dayValue) > mObj.days) {
+                onDayChange(String(mObj.days));
+              }
+            }
+          }}
+          style={{
+            flex: 1.4,
+            padding: '7px 8px',
+            borderRadius: 9,
+            border: '1px solid #d6cebf',
+            backgroundColor: '#ffffff',
+            fontSize: 12,
+            color: monthValue ? '#1c1917' : '#78716c',
+            outline: 'none'
+          }}
+        >
+          <option value="">Mois (facultatif)</option>
+          {MONTHS_FR.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={dayValue || ''}
+          disabled={!monthValue}
+          onChange={(e) => onDayChange(e.target.value)}
+          style={{
+            flex: 1,
+            padding: '7px 8px',
+            borderRadius: 9,
+            border: '1px solid #d6cebf',
+            backgroundColor: monthValue ? '#ffffff' : '#eae3d5',
+            fontSize: 12,
+            color: dayValue ? '#1c1917' : '#78716c',
+            outline: 'none',
+            cursor: monthValue ? 'pointer' : 'not-allowed'
+          }}
+        >
+          <option value="">Jour (facultatif)</option>
+          {Array.from({ length: maxDays }, (_, idx) => idx + 1).map((d) => (
+            <option key={d} value={d}>
+              {d === 1 ? '1er' : d}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
 
 export default function EventModal({
   isOpen,
@@ -104,7 +314,7 @@ export default function EventModal({
             <input
               type="text"
               required
-              placeholder="Ex. Sacre de Charlemagne"
+              placeholder="Ex. Armistice de 1918"
               value={formData.titre}
               onChange={(e) => setFormData(prev => ({ ...prev, titre: e.target.value }))}
               style={{
@@ -121,7 +331,7 @@ export default function EventModal({
             />
           </div>
 
-          {/* Fil conducteur / Thématique (badges cliquables + suppression + ajout mobile) */}
+          {/* Fil conducteur / Thématique */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
               Fil conducteur (facultatif)
@@ -181,7 +391,6 @@ export default function EventModal({
                 );
               })}
 
-              {/* Champ d'ajout rapide de fil conducteur */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <input
                   type="text"
@@ -288,7 +497,6 @@ export default function EventModal({
               flexDirection: 'column',
               gap: 10
             }}>
-              {/* 1. Préréglages rapides */}
               <div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Préréglages rapides
@@ -345,7 +553,6 @@ export default function EventModal({
                 </div>
               </div>
 
-              {/* 2. Grille de formes façon PowerPoint */}
               <div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Forme du tracé
@@ -415,7 +622,6 @@ export default function EventModal({
                 </div>
               </div>
 
-              {/* 3. Ligne Trait & Gravité */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 2 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>Tracé</span>
@@ -498,7 +704,6 @@ export default function EventModal({
                 </div>
               </div>
 
-              {/* 4. Opacité du remplissage */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase' }}>
@@ -537,142 +742,36 @@ export default function EventModal({
             </div>
           )}
 
-          {/* Dates & Ères */}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
-                {isRange ? 'Année début' : 'Année'}
-              </label>
-              <input
-                type="number"
-                required
-                placeholder="800"
-                value={formData.anneeDebut}
-                onChange={(e) => setFormData(prev => ({ ...prev, anneeDebut: e.target.value }))}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  border: '1px solid #d6cebf',
-                  backgroundColor: '#ffffff',
-                  fontSize: 13,
-                  color: '#1c1917',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+          {/* Sélecteur de date début (Année + Mois + Jour) */}
+          <HistoricalDateSelector
+            label={isRange ? 'Date de début' : 'Date de l’événement'}
+            required
+            placeholderYear="1918"
+            yearValue={formData.anneeDebut}
+            onYearChange={(val) => setFormData(prev => ({ ...prev, anneeDebut: val }))}
+            eraValue={formData.ereDebut}
+            onEraChange={(val) => setFormData(prev => ({ ...prev, ereDebut: val }))}
+            monthValue={formData.moisDebut || ''}
+            onMonthChange={(val) => setFormData(prev => ({ ...prev, moisDebut: val }))}
+            dayValue={formData.jourDebut || ''}
+            onDayChange={(val) => setFormData(prev => ({ ...prev, jourDebut: val }))}
+          />
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: 130 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
-                Ère
-              </label>
-              <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 3, borderRadius: 10, height: 36, boxSizing: 'border-box' }}>
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, ereDebut: 'BCE' }))}
-                  style={{
-                    flex: 1,
-                    border: 'none',
-                    borderRadius: 7,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    backgroundColor: formData.ereDebut === 'BCE' ? '#ffffff' : 'transparent',
-                    color: formData.ereDebut === 'BCE' ? '#b45309' : '#78716c',
-                    boxShadow: formData.ereDebut === 'BCE' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
-                  }}
-                >
-                  BCE
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, ereDebut: 'CE' }))}
-                  style={{
-                    flex: 1,
-                    border: 'none',
-                    borderRadius: 7,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    backgroundColor: formData.ereDebut === 'CE' ? '#ffffff' : 'transparent',
-                    color: formData.ereDebut === 'CE' ? '#b45309' : '#78716c',
-                    boxShadow: formData.ereDebut === 'CE' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
-                  }}
-                >
-                  CE
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Année fin */}
+          {/* Sélecteur de date fin si Période */}
           {isRange && (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
-                  Année fin
-                </label>
-                <input
-                  type="number"
-                  required
-                  placeholder="814"
-                  value={formData.anneeFin}
-                  onChange={(e) => setFormData(prev => ({ ...prev, anneeFin: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: '1px solid #d6cebf',
-                    backgroundColor: '#ffffff',
-                    fontSize: 13,
-                    color: '#1c1917',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: 130 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
-                  Ère fin
-                </label>
-                <div style={{ display: 'flex', backgroundColor: '#eae3d5', padding: 3, borderRadius: 10, height: 36, boxSizing: 'border-box' }}>
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, ereFin: 'BCE' }))}
-                    style={{
-                      flex: 1,
-                      border: 'none',
-                      borderRadius: 7,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      backgroundColor: formData.ereFin === 'BCE' ? '#ffffff' : 'transparent',
-                      color: formData.ereFin === 'BCE' ? '#b45309' : '#78716c'
-                    }}
-                  >
-                    BCE
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, ereFin: 'CE' }))}
-                    style={{
-                      flex: 1,
-                      border: 'none',
-                      borderRadius: 7,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      backgroundColor: formData.ereFin === 'CE' ? '#ffffff' : 'transparent',
-                      color: formData.ereFin === 'CE' ? '#b45309' : '#78716c'
-                    }}
-                  >
-                    CE
-                  </button>
-                </div>
-              </div>
-            </div>
+            <HistoricalDateSelector
+              label="Date de fin"
+              required
+              placeholderYear="1945"
+              yearValue={formData.anneeFin}
+              onYearChange={(val) => setFormData(prev => ({ ...prev, anneeFin: val }))}
+              eraValue={formData.ereFin}
+              onEraChange={(val) => setFormData(prev => ({ ...prev, ereFin: val }))}
+              monthValue={formData.moisFin || ''}
+              onMonthChange={(val) => setFormData(prev => ({ ...prev, moisFin: val }))}
+              dayValue={formData.jourFin || ''}
+              onDayChange={(val) => setFormData(prev => ({ ...prev, jourFin: val }))}
+            />
           )}
 
           {/* Palette de couleurs */}
@@ -705,7 +804,7 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Tags (avec suppression × et validation mobile ✓) */}
+          {/* Tags */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#57534e', textTransform: 'uppercase' }}>
               Tags

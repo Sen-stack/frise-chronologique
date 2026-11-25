@@ -3,11 +3,14 @@ import {
   yearToChapterMiniX,
   formatYear,
   getTickInterval,
-  getItemStyle
+  getItemStyle,
+  getEventStartYear,
+  getEventEndYear,
+  formatDetailedDate
 } from './timelineMath.js';
 
 export function computeGravityTracks(periodesList) {
-  const sorted = [...periodesList].sort((a, b) => a.date_debut - b.date_debut || (b.date_fin - a.date_fin));
+  const sorted = [...periodesList].sort((a, b) => a._exactStart - b._exactStart || (b._exactEnd - a._exactEnd));
   const occupiedTop = [];
   const occupiedBottom = [];
 
@@ -17,22 +20,22 @@ export function computeGravityTracks(periodesList) {
 
     if (p.gravite === false) {
       let fixedLevel = 0;
-      while (tracks[fixedLevel] !== undefined && tracks[fixedLevel] > p.date_debut) {
+      while (tracks[fixedLevel] !== undefined && tracks[fixedLevel] > p._exactStart) {
         fixedLevel++;
       }
-      tracks[fixedLevel] = p.date_fin;
+      tracks[fixedLevel] = p._exactEnd;
       return { ...p, side, level: fixedLevel, dropYear: null };
     }
 
     let level = 0;
-    while (tracks[level] !== undefined && tracks[level] > p.date_debut) {
+    while (tracks[level] !== undefined && tracks[level] > p._exactStart) {
       level++;
     }
 
     const altSide = side === 'top' ? 'bottom' : 'top';
     const altTracks = altSide === 'top' ? occupiedTop : occupiedBottom;
     let altLevel = 0;
-    while (altTracks[altLevel] !== undefined && altTracks[altLevel] > p.date_debut) {
+    while (altTracks[altLevel] !== undefined && altTracks[altLevel] > p._exactStart) {
       altLevel++;
     }
 
@@ -43,12 +46,12 @@ export function computeGravityTracks(periodesList) {
     }
 
     let dropYear = null;
-    if (level > 0 && tracks[level - 1] !== undefined && tracks[level - 1] > p.date_debut && tracks[level - 1] < p.date_fin) {
+    if (level > 0 && tracks[level - 1] !== undefined && tracks[level - 1] > p._exactStart && tracks[level - 1] < p._exactEnd) {
       dropYear = tracks[level - 1];
-      tracks[level - 1] = p.date_fin;
+      tracks[level - 1] = p._exactEnd;
     }
 
-    tracks[level] = p.date_fin;
+    tracks[level] = p._exactEnd;
     return { ...p, side, level, dropYear };
   });
 }
@@ -103,8 +106,8 @@ export function renderTimelineScene({
   const xEnd = yearToX(currentBounds.max);
 
   const filteredList = (allEvents || []).filter(evt => {
-    const debut = evt.date_debut;
-    const fin = evt.date_fin ?? debut;
+    const debut = getEventStartYear(evt);
+    const fin = getEventEndYear(evt) ?? debut;
     if (fin < currentBounds.min || debut > currentBounds.max) return false;
 
     if (activeFilter.mode === 'custom') {
@@ -116,10 +119,14 @@ export function renderTimelineScene({
     }
     const itemTags = Array.isArray(evt.tags) && evt.tags.length > 0 ? evt.tags : [evt.categorie || "Sans tag"];
     return itemTags.some(tag => activeFilter.tags.includes(tag));
-  });
+  }).map(evt => ({
+    ...evt,
+    _exactStart: getEventStartYear(evt),
+    _exactEnd: getEventEndYear(evt)
+  }));
 
-  const rawPeriodes = filteredList.filter(e => e.date_fin !== null && e.date_fin !== undefined && e.date_fin !== '');
-  const ponctuels = filteredList.filter(e => !e.date_fin);
+  const rawPeriodes = filteredList.filter(e => e._exactEnd !== null && e._exactEnd !== undefined);
+  const ponctuels = filteredList.filter(e => e._exactEnd === null || e._exactEnd === undefined);
   const gravityPeriodes = computeGravityTracks(rawPeriodes);
 
   const visibleX1 = Math.max(-60, xStart);
@@ -174,8 +181,8 @@ export function renderTimelineScene({
   const externalPeriodLabels = [];
 
   gravityPeriodes.forEach((p) => {
-    const x1 = yearToX(p.date_debut);
-    const x2 = yearToX(p.date_fin);
+    const x1 = yearToX(p._exactStart);
+    const x2 = yearToX(p._exactEnd);
     const rX = Math.min(x1, x2);
     const rW = Math.max(8, Math.abs(x2 - x1));
 
@@ -200,7 +207,7 @@ export function renderTimelineScene({
     let xSplit = 0;
     let remainingWAfterDrop = 0;
 
-    if (p.dropYear && p.dropYear > p.date_debut && p.dropYear < p.date_fin && p.level > 0) {
+    if (p.dropYear && p.dropYear > p._exactStart && p.dropYear < p._exactEnd && p.level > 0) {
       xSplit = yearToX(p.dropYear);
       remainingWAfterDrop = (rX + rW) - xSplit;
       if (remainingWAfterDrop >= trackH) {
@@ -374,15 +381,15 @@ export function renderTimelineScene({
     ...ponctuels.map(evt => ({
       kind: 'point',
       evt,
-      sortYear: evt.date_debut,
-      x: yearToX(evt.date_debut),
+      sortYear: evt._exactStart,
+      x: yearToX(evt._exactStart),
       anchorY: barY - defaultHalfH,
       color: evt.couleur || getItemStyle(evt).stroke || '#64748b'
     })),
     ...externalPeriodLabels.map(item => ({
       kind: 'period',
       evt: item.evt,
-      sortYear: item.evt.date_debut,
+      sortYear: item.evt._exactStart,
       x: item.anchorX,
       anchorY: item.anchorY,
       color: item.baseColor
@@ -444,10 +451,9 @@ export function renderTimelineScene({
     ctx.stroke();
 
     if (shouldShowLabel) {
-      const formatShortDate = (y) => (y < 0 ? `${Math.abs(y)} BCE` : `${y} CE`);
-      const anneeStr = kind === 'period'
-        ? `${formatShortDate(evt.date_debut)} — ${formatShortDate(evt.date_fin)}`
-        : formatShortDate(evt.date_debut);
+      const startStr = formatDetailedDate(evt.date_debut, evt.mois_debut, evt.jour_debut, true);
+      const endStr = formatDetailedDate(evt.date_fin, evt.mois_fin, evt.jour_fin, true);
+      const anneeStr = kind === 'period' ? `${startStr} — ${endStr}` : startStr;
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
@@ -561,7 +567,7 @@ export function renderTimelineScene({
   const numBuckets = isMobile ? 12 : 24;
   const densityBins = new Array(numBuckets).fill(0);
   filteredList.forEach(evt => {
-    const yr = evt.date_debut;
+    const yr = evt._exactStart;
     const xPos = yearToChapterMiniX(yr, mw, activeChapter);
     const binIdx = Math.max(0, Math.min(numBuckets - 1, Math.floor((xPos / mw) * numBuckets)));
     densityBins[binIdx] += 1;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatYear, getItemStyle } from '../utils/timelineMath.js';
+import { formatEventDate, getItemStyle } from '../utils/timelineMath.js';
 
 export default function EventPopup({ event, position, onClose, onDeepDive }) {
   if (!event) return null;
@@ -58,8 +58,7 @@ export default function EventPopup({ event, position, onClose, onDeepDive }) {
             {event.date_fin ? 'Période' : 'Événement'}
           </span>
           <span style={{ fontSize: 11, color: '#78716c', fontWeight: 600 }}>
-            {formatYear(event.date_debut)}
-            {event.date_fin ? ` ➔ ${formatYear(event.date_fin)}` : ''}
+            {formatEventDate(event)}
           </span>
         </div>
 

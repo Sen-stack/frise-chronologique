@@ -6,6 +6,21 @@ export const HANDLE_WIDTH = 10;
 export const MINI_HEIGHT = 70;
 export const BAR_HEIGHT = 46;
 
+export const MONTHS_FR = [
+  { value: 1, label: "Janvier", short: "janv.", days: 31 },
+  { value: 2, label: "Février", short: "févr.", days: 29 },
+  { value: 3, label: "Mars", short: "mars", days: 31 },
+  { value: 4, label: "Avril", short: "avr.", days: 30 },
+  { value: 5, label: "Mai", short: "mai", days: 31 },
+  { value: 6, label: "Juin", short: "juin", days: 30 },
+  { value: 7, label: "Juillet", short: "juil.", days: 31 },
+  { value: 8, label: "Août", short: "août", days: 31 },
+  { value: 9, label: "Septembre", short: "sept.", days: 30 },
+  { value: 10, label: "Octobre", short: "oct.", days: 31 },
+  { value: 11, label: "Novembre", short: "nov.", days: 30 },
+  { value: 12, label: "Décembre", short: "déc.", days: 31 }
+];
+
 // Définition des 3 grandes tranches temporelles fonctionnelles avec bornes strictes
 export const TIMELINE_CHAPTERS = [
   {
@@ -149,6 +164,57 @@ export function formatYear(year) {
   if (rounded <= -10000) return Math.abs(Math.round(rounded / 1000)) + " ka BP";
   if (rounded < 0) return Math.abs(rounded) + " av. J.-C.";
   return rounded.toString();
+}
+
+// Position exacte sur la frise (année + fraction mois/jour)
+export function getExactYear(year, month = null, day = null) {
+  const baseYear = Number(year) || 0;
+  if (!month) return baseYear;
+  const m = Math.max(1, Math.min(12, Number(month)));
+  const d = day ? Math.max(1, Math.min(31, Number(day))) : 15;
+  const dayOfYear = (m - 1) * 30.4375 + (d - 1);
+  const fraction = Math.min(0.999, dayOfYear / 365.25);
+  return baseYear + fraction;
+}
+
+export function getEventStartYear(evt) {
+  if (!evt) return 0;
+  return getExactYear(evt.date_debut, evt.mois_debut, evt.jour_debut);
+}
+
+export function getEventEndYear(evt) {
+  if (!evt || evt.date_fin === null || evt.date_fin === undefined || evt.date_fin === '') return null;
+  return getExactYear(evt.date_fin, evt.mois_fin, evt.jour_fin);
+}
+
+// Formatage complet d'une date (ex: "11 nov. 1918" ou "Novembre 1918" ou "1918")
+export function formatDetailedDate(year, month = null, day = null, shortEra = false) {
+  if (year === null || year === undefined || year === '') return '';
+  const y = Math.round(Number(year));
+  if (Math.abs(y) >= 10000 || !month) {
+    if (shortEra) return y < 0 ? `${Math.abs(y)} BCE` : `${y} CE`;
+    return formatYear(y);
+  }
+  const mObj = MONTHS_FR.find(m => m.value === Number(month));
+  const yearStr = y < 0
+    ? (shortEra ? `${Math.abs(y)} BCE` : `${Math.abs(y)} av. J.-C.`)
+    : (shortEra ? `${y} CE` : `${y}`);
+
+  if (!mObj) return yearStr;
+  if (day) {
+    const dayStr = Number(day) === 1 ? '1er' : Number(day);
+    return `${dayStr} ${mObj.short} ${yearStr}`;
+  }
+  return `${mObj.label} ${yearStr}`;
+}
+
+export function formatEventDate(evt, shortEra = false) {
+  if (!evt) return '';
+  const startStr = formatDetailedDate(evt.date_debut, evt.mois_debut, evt.jour_debut, shortEra);
+  const hasEnd = evt.date_fin !== null && evt.date_fin !== undefined && evt.date_fin !== '';
+  if (!hasEnd) return startStr;
+  const endStr = formatDetailedDate(evt.date_fin, evt.mois_fin, evt.jour_fin, shortEra);
+  return `${startStr} ➔ ${endStr}`;
 }
 
 // Calcul de l'intervalle dynamique des graduations
