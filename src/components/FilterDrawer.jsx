@@ -346,7 +346,6 @@ export default function FilterDrawer({
                     </div>
                   </div>
 
-                  {/* Conteneur avec sa propre barre de scroll comme Unitaires */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto', paddingRight: 3 }}>
                     {availableTags.map(tag => {
                       const isChecked = selectedTags.includes(tag);
@@ -525,7 +524,7 @@ export default function FilterDrawer({
                           color: areNoCustomSelected ? '#ffffff' : textMuted
                         }}
                       >
-                        Rien
+                        Aucun
                       </button>
                     </div>
                   </div>
