@@ -9,6 +9,7 @@ export default function TimelineHeader({
   onResetFullView,
   onOpenCreateModal,
   onOpenFilterModal,
+  onOpenTagThemeModal,
   activeSelection,
   onOpenEditDrawer,
   onStartDrawTerritory,
@@ -104,15 +105,15 @@ export default function TimelineHeader({
               justifyContent: 'space-between'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                {/* Bouton Filtrer style Fnac */}
+                {/* Bouton Filtrer (icône seule) */}
                 <button
                   type="button"
                   onClick={onOpenFilterModal}
                   title="Filtrer & Calques"
                   style={{
+                    width: btnSize,
                     height: btnSize,
-                    padding: '0 9px',
-                    borderRadius: 14,
+                    borderRadius: '50%',
                     backgroundColor: '#eaf0f6',
                     border: '1px solid rgba(255, 255, 255, 0.85)',
                     boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
@@ -120,9 +121,8 @@ export default function TimelineHeader({
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 4,
-                    fontSize: 10.5,
-                    fontWeight: 700
+                    justifyContent: 'center',
+                    padding: 0
                   }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
@@ -136,13 +136,38 @@ export default function TimelineHeader({
                     <line x1="9" y1="8" x2="15" y2="8" />
                     <line x1="17" y1="16" x2="23" y2="16" />
                   </svg>
-                  <span>Filtrer</span>
+                </button>
+
+                {/* Bouton Créer Tag & Thématique (icône étiquette seule) */}
+                <button
+                  type="button"
+                  onClick={onOpenTagThemeModal}
+                  title="Tags & Thématiques"
+                  style={{
+                    width: btnSize,
+                    height: btnSize,
+                    borderRadius: '50%',
+                    backgroundColor: '#eaf0f6',
+                    border: '1px solid rgba(255, 255, 255, 0.85)',
+                    boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
+                    color: '#5b4fe8',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                    <line x1="7" y1="7" x2="7.01" y2="7" />
+                  </svg>
                 </button>
 
                 <button
                   type="button"
                   onClick={onResetFullView}
-                  title="Afficher toute l'époque (Vue globale)"
+                  title="Vue globale"
                   style={{
                     width: btnSize,
                     height: btnSize,
@@ -191,7 +216,7 @@ export default function TimelineHeader({
                     <button
                       type="button"
                       onClick={() => onOpenEditDrawer(activeSelection)}
-                      title={`Modifier "${activeSelection.titre}"`}
+                      title="Modifier"
                       style={{
                         width: btnSize,
                         height: btnSize,
@@ -216,7 +241,7 @@ export default function TimelineHeader({
                     <button
                       type="button"
                       onClick={() => onStartDrawTerritory(activeSelection)}
-                      title={`Dessiner sur la carte pour "${activeSelection.titre}"`}
+                      title="Dessiner"
                       style={{
                         width: btnSize,
                         height: btnSize,
@@ -242,7 +267,7 @@ export default function TimelineHeader({
                     <button
                       type="button"
                       onClick={() => onDeleteEvent(activeSelection)}
-                      title={`Supprimer "${activeSelection.titre}"`}
+                      title="Supprimer"
                       style={{
                         width: btnSize,
                         height: btnSize,
@@ -267,94 +292,40 @@ export default function TimelineHeader({
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <button
-                  type="button"
-                  onClick={onToggleRelief}
-                  title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 8px',
-                    borderRadius: 14,
-                    backgroundColor: '#eaf0f6',
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: isReliefActive
-                      ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
-                      : '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                    cursor: 'pointer',
-                    color: '#334155',
-                    fontSize: 10,
-                    fontWeight: 600
-                  }}
-                >
-                  <span style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: '50%',
-                    backgroundColor: isReliefActive ? '#10b981' : '#94a3b8'
-                  }} />
-                  <span>Relief</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onRecalibrate}
-                  title="Recalibrer / Resynchroniser la carte"
-                  style={{
-                    width: btnSize,
-                    height: btnSize,
-                    borderRadius: '50%',
-                    backgroundColor: '#eaf0f6',
-                    border: '1px solid rgba(255, 255, 255, 0.8)',
-                    boxShadow: '2px 2px 6px rgba(166, 180, 200, 0.5), -2px -2px 6px rgba(255, 255, 255, 0.9)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0
-                  }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="#5b4fe8">
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                </button>
-
-                <div
-                  onClick={onToggleAtlas}
-                  title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte"}
-                  style={{
-                    width: 18,
-                    height: btnSize,
-                    backgroundColor: isAtlasOpen ? '#10b981' : '#d8e2ec',
-                    borderRadius: 10,
-                    padding: 2,
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: isAtlasOpen ? 'flex-start' : 'flex-end',
-                    alignItems: 'center',
-                    transition: 'background-color 0.2s ease',
-                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.18)'
-                  }}
-                >
-                  <div style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: '50%',
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 8,
-                    fontWeight: 800,
-                    color: isAtlasOpen ? '#10b981' : '#94a3b8'
-                  }}>
-                    {isAtlasOpen ? '✓' : ''}
-                  </div>
+              {/* Switch Carte à droite */}
+              <div
+                onClick={onToggleAtlas}
+                title={isAtlasOpen ? "Masquer la carte" : "Afficher la carte"}
+                style={{
+                  width: 18,
+                  height: btnSize,
+                  backgroundColor: isAtlasOpen ? '#10b981' : '#d8e2ec',
+                  borderRadius: 10,
+                  padding: 2,
+                  boxSizing: 'border-box',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: isAtlasOpen ? 'flex-start' : 'flex-end',
+                  alignItems: 'center',
+                  transition: 'background-color 0.2s ease',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.18)'
+                }}
+              >
+                <div style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: '50%',
+                  backgroundColor: '#ffffff',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 8,
+                  fontWeight: 800,
+                  color: isAtlasOpen ? '#10b981' : '#94a3b8'
+                }}>
+                  {isAtlasOpen ? '✓' : ''}
                 </div>
               </div>
             </div>
@@ -405,7 +376,7 @@ export default function TimelineHeader({
               <button
                 type="button"
                 onClick={onResetFullView}
-                title="Afficher toute l'époque (Vue globale)"
+                title="Vue globale"
                 style={{
                   width: 32,
                   height: 32,
@@ -454,7 +425,7 @@ export default function TimelineHeader({
                   <button
                     type="button"
                     onClick={() => onOpenEditDrawer(activeSelection)}
-                    title={`Modifier "${activeSelection.titre}"`}
+                    title="Modifier"
                     style={{
                       width: 32,
                       height: 32,
@@ -479,7 +450,7 @@ export default function TimelineHeader({
                   <button
                     type="button"
                     onClick={() => onStartDrawTerritory(activeSelection)}
-                    title={`Dessiner sur la carte pour "${activeSelection.titre}"`}
+                    title="Dessiner"
                     style={{
                       width: 32,
                       height: 32,
@@ -505,7 +476,7 @@ export default function TimelineHeader({
                   <button
                     type="button"
                     onClick={() => onDeleteEvent(activeSelection)}
-                    title={`Supprimer "${activeSelection.titre}"`}
+                    title="Supprimer"
                     style={{
                       width: 32,
                       height: 32,
@@ -571,37 +542,26 @@ export default function TimelineHeader({
                 onClick={onToggleRelief}
                 title={isReliefActive ? "Désactiver le relief" : "Activer le relief"}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  padding: '4px 9px',
+                  padding: '5px 10px',
                   borderRadius: 16,
-                  backgroundColor: '#eaf0f6',
+                  backgroundColor: isReliefActive ? '#5b4fe8' : '#eaf0f6',
                   border: '1px solid rgba(255, 255, 255, 0.8)',
                   boxShadow: isReliefActive
-                    ? 'inset 2px 2px 4px rgba(166, 180, 200, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.9)'
+                    ? 'inset 2px 2px 4px rgba(0, 0, 0, 0.2)'
                     : '3px 3px 8px rgba(166, 180, 200, 0.5), -3px -3px 8px rgba(255, 255, 255, 0.9)',
                   cursor: 'pointer',
-                  color: '#334155',
+                  color: isReliefActive ? '#ffffff' : '#334155',
                   fontSize: 11,
-                  fontWeight: 600
+                  fontWeight: 700
                 }}
               >
-                <span style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  backgroundColor: isReliefActive ? '#10b981' : '#94a3b8',
-                  boxShadow: isReliefActive ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none',
-                  transition: 'background-color 0.2s ease'
-                }} />
-                <span>Relief</span>
+                Relief
               </button>
 
               <button
                 type="button"
                 onClick={onRecalibrate}
-                title="Recalibrer / Resynchroniser la carte"
+                title="Synchroniser la carte"
                 style={{
                   width: 30,
                   height: 30,
@@ -662,7 +622,6 @@ export default function TimelineHeader({
 
       </header>
 
-      {/* SOUS-BARRE DE DESSIN VECTORIEL */}
       {drawingTerritoryEvent && (
         <div
           ref={subBarRef}
@@ -828,7 +787,7 @@ export default function TimelineHeader({
                 type="button"
                 onClick={() => drawUiState.actions?.validateShape()}
                 disabled={!drawUiState.canValidateShape}
-                title="Valider cette forme et en tracer une nouvelle"
+                title="Valider cette forme"
                 style={{
                   width: 26,
                   height: 26,
@@ -852,7 +811,7 @@ export default function TimelineHeader({
               <button
                 type="button"
                 onClick={() => drawUiState.actions?.toggleAddLink()}
-                title={`Associer un lien (${drawUiState.linksCount})`}
+                title="Associer un lien"
                 style={{
                   position: 'relative',
                   width: 26,

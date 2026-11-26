@@ -139,12 +139,12 @@ function HistoricalDateSelector({
     : '';
 
   const neumorphicInput = {
-    padding: '7px 10px',
-    borderRadius: 10,
+    padding: '8px 11px',
+    borderRadius: 11,
     border: '1px solid rgba(255, 255, 255, 0.75)',
     backgroundColor: '#eaf0f6',
     boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.9)',
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: 600,
     color: '#1e293b',
     outline: 'none',
@@ -155,25 +155,25 @@ function HistoricalDateSelector({
     <div style={{
       backgroundColor: '#eaf0f6',
       border: '1px solid rgba(255, 255, 255, 0.8)',
-      borderRadius: 15,
-      padding: '10px 11px',
+      borderRadius: 16,
+      padding: '10px 12px',
       boxShadow: '4px 4px 10px rgba(166, 180, 200, 0.45), -4px -4px 10px rgba(255, 255, 255, 0.85)',
       display: 'flex',
       flexDirection: 'column',
-      gap: 7
+      gap: 8
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
           {label}
         </label>
         {preview && (
           <span style={{
-            fontSize: 10,
+            fontSize: 10.5,
             fontWeight: 700,
             color: '#5b4fe8',
             backgroundColor: '#eaf0f6',
-            padding: '2px 7px',
-            borderRadius: 8,
+            padding: '2px 8px',
+            borderRadius: 9,
             boxShadow: '2px 2px 5px rgba(166, 180, 200, 0.45), -2px -2px 5px rgba(255, 255, 255, 0.9)'
           }}>
             {preview}
@@ -181,7 +181,7 @@ function HistoricalDateSelector({
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="number"
           required={required}
@@ -194,8 +194,8 @@ function HistoricalDateSelector({
           display: 'flex',
           backgroundColor: '#dfe6ee',
           padding: 3,
-          borderRadius: 10,
-          width: 100,
+          borderRadius: 11,
+          width: 112,
           boxShadow: 'inset 2px 2px 4px rgba(166, 180, 200, 0.55), inset -2px -2px 4px rgba(255, 255, 255, 0.85)',
           boxSizing: 'border-box'
         }}>
@@ -205,8 +205,8 @@ function HistoricalDateSelector({
             style={{
               flex: 1,
               border: 'none',
-              borderRadius: 7,
-              fontSize: 10,
+              borderRadius: 8,
+              fontSize: 11,
               fontWeight: 700,
               cursor: 'pointer',
               backgroundColor: eraValue === 'BCE' ? '#eaf0f6' : 'transparent',
@@ -222,8 +222,8 @@ function HistoricalDateSelector({
             style={{
               flex: 1,
               border: 'none',
-              borderRadius: 7,
-              fontSize: 10,
+              borderRadius: 8,
+              fontSize: 11,
               fontWeight: 700,
               cursor: 'pointer',
               backgroundColor: eraValue === 'CE' ? '#eaf0f6' : 'transparent',
@@ -241,7 +241,7 @@ function HistoricalDateSelector({
         gridTemplateColumns: '1.35fr 0.85fr 1fr',
         gap: 4,
         backgroundColor: '#dfe6ee',
-        borderRadius: 11,
+        borderRadius: 12,
         padding: '4px 6px',
         boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.5), inset -2px -2px 5px rgba(255, 255, 255, 0.85)'
       }}>
@@ -287,9 +287,9 @@ export default function EventEditDrawer({
   onSave,
   onDelete,
   availableTags,
-  onDeleteTag = () => {},
-  onToggleTag,
+  onCreateTag = () => {},
   availableGroups = [],
+  onCreateGroup = () => {},
   onDeleteGroup = () => {}
 }) {
   const [formData, setFormData] = useState({
@@ -314,6 +314,9 @@ export default function EventEditDrawer({
   });
 
   const [newGroupInput, setNewGroupInput] = useState('');
+  const [newTagInput, setNewTagInput] = useState('');
+  const [isTagsPickerOpen, setIsTagsPickerOpen] = useState(false);
+  const [tagSearch, setTagSearch] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const colorPickerRef = useRef(null);
 
@@ -342,16 +345,18 @@ export default function EventEditDrawer({
       gravite: event.gravite !== false
     });
     setNewGroupInput('');
+    setNewTagInput('');
   }, [event]);
 
   if (!isOpen || !event) return null;
 
   const isCustomColor = !COLOR_PRESETS.some(c => c.stroke.toLowerCase() === (formData.couleur || '').toLowerCase());
+  const filteredTags = availableTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
 
   const neumorphicInput = {
     width: '100%',
-    padding: '8px 11px',
-    borderRadius: 11,
+    padding: '9px 12px',
+    borderRadius: 12,
     border: '1px solid rgba(255, 255, 255, 0.75)',
     backgroundColor: '#eaf0f6',
     boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.9)',
@@ -364,10 +369,21 @@ export default function EventEditDrawer({
 
   const handleAddGroupLocal = () => {
     const val = newGroupInput.trim();
-    if (val) {
-      setFormData(prev => ({ ...prev, groupe_id: val }));
-      setNewGroupInput('');
-    }
+    if (!val) return;
+    onCreateGroup(val);
+    setFormData(prev => ({ ...prev, groupe_id: val }));
+    setNewGroupInput('');
+  };
+
+  const handleAddTagLocal = () => {
+    const val = newTagInput.trim();
+    if (!val) return;
+    onCreateTag(val);
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.includes(val) ? prev.tags : [...prev.tags, val]
+    }));
+    setNewTagInput('');
   };
 
   const handleSubmit = async (e) => {
@@ -390,6 +406,9 @@ export default function EventEditDrawer({
     }
 
     const pendingGroup = newGroupInput.trim();
+    if (pendingGroup) {
+      onCreateGroup(pendingGroup);
+    }
     const finalGroup = pendingGroup || (formData.groupe_id ? formData.groupe_id.trim() : null);
 
     const payload = {
@@ -417,32 +436,40 @@ export default function EventEditDrawer({
 
   return (
     <div
+      onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 40,
-        pointerEvents: 'none',
+        zIndex: 50,
+        backgroundColor: 'rgba(15, 23, 42, 0.35)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
         fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif"
       }}
     >
       <div
+        onClick={(e) => e.stopPropagation()}
         style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          width: 390,
-          maxWidth: '92vw',
-          height: '100vh',
+          width: '100%',
+          maxWidth: 450,
+          maxHeight: '90dvh',
+          overflowY: 'auto',
           backgroundColor: '#eaf0f6',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.85)',
-          boxShadow: '-10px 0 28px rgba(166, 180, 200, 0.55)',
+          borderRadius: 24,
+          boxShadow: '12px 12px 28px rgba(166, 180, 200, 0.55), -10px -10px 24px rgba(255, 255, 255, 0.9)',
+          border: '1px solid rgba(255, 255, 255, 0.85)',
+          color: '#1e293b',
+          padding: '20px 22px',
           display: 'flex',
           flexDirection: 'column',
-          pointerEvents: 'auto',
-          zIndex: 45
+          gap: 14,
+          boxSizing: 'border-box',
+          position: 'relative'
         }}
       >
-        {/* Bouton fermer discret en haut à droite */}
         <button
           type="button"
           onClick={onClose}
@@ -469,20 +496,9 @@ export default function EventEditDrawer({
           ✕
         </button>
 
-        {/* Formulaire */}
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '18px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14
-          }}
-        >
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           {/* Nom */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingRight: 30 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingRight: 30 }}>
             <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
               Nom
             </label>
@@ -607,13 +623,13 @@ export default function EventEditDrawer({
             </div>
           </div>
 
-          {/* Bascule Ponctuel / Période (sans émoji) */}
+          {/* Bascule Ponctuel / Période */}
           <div
             style={{
               display: 'flex',
               backgroundColor: '#dfe6ee',
               padding: 3,
-              borderRadius: 11,
+              borderRadius: 12,
               gap: 4,
               boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.85)'
             }}
@@ -623,10 +639,10 @@ export default function EventEditDrawer({
               onClick={() => setFormData(prev => ({ ...prev, isRange: false }))}
               style={{
                 flex: 1,
-                padding: '6px 0',
+                padding: '7px 0',
                 border: 'none',
-                borderRadius: 8,
-                fontSize: 11.5,
+                borderRadius: 9,
+                fontSize: 12,
                 fontWeight: 700,
                 cursor: 'pointer',
                 backgroundColor: !formData.isRange ? '#eaf0f6' : 'transparent',
@@ -641,10 +657,10 @@ export default function EventEditDrawer({
               onClick={() => setFormData(prev => ({ ...prev, isRange: true }))}
               style={{
                 flex: 1,
-                padding: '6px 0',
+                padding: '7px 0',
                 border: 'none',
-                borderRadius: 8,
-                fontSize: 11.5,
+                borderRadius: 9,
+                fontSize: 12,
                 fontWeight: 700,
                 cursor: 'pointer',
                 backgroundColor: formData.isRange ? '#eaf0f6' : 'transparent',
@@ -662,23 +678,23 @@ export default function EventEditDrawer({
               backgroundColor: '#eaf0f6',
               border: '1px solid rgba(255, 255, 255, 0.8)',
               borderRadius: 14,
-              padding: '11px',
+              padding: '12px',
               boxShadow: '4px 4px 10px rgba(166, 180, 200, 0.45), -4px -4px 10px rgba(255, 255, 255, 0.85)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 9
+              gap: 10
             }}>
               <div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Préréglages rapides
                 </span>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, marginTop: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
                   <button
                     type="button"
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau', style_trait: 'plein', gravite: true }))}
                     style={{
                       padding: '5px 4px',
-                      borderRadius: 7,
+                      borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.7)',
                       backgroundColor: (formData.forme === 'bandeau' && formData.style_trait === 'plein') ? '#ffffff' : '#dfe6ee',
                       color: '#334155',
@@ -694,7 +710,7 @@ export default function EventEditDrawer({
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'ligne', style_trait: 'plein', gravite: true }))}
                     style={{
                       padding: '5px 4px',
-                      borderRadius: 7,
+                      borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.7)',
                       backgroundColor: (formData.forme === 'ligne' && formData.style_trait === 'plein') ? '#ffffff' : '#dfe6ee',
                       color: '#334155',
@@ -710,7 +726,7 @@ export default function EventEditDrawer({
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau', style_trait: 'pointille', gravite: true }))}
                     style={{
                       padding: '5px 4px',
-                      borderRadius: 7,
+                      borderRadius: 8,
                       border: '1px solid rgba(255, 255, 255, 0.7)',
                       backgroundColor: formData.style_trait === 'pointille' ? '#ffffff' : '#dfe6ee',
                       color: '#334155',
@@ -728,14 +744,14 @@ export default function EventEditDrawer({
                 <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Forme du tracé
                 </span>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, marginTop: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
                   <div
                     onClick={() => setFormData(prev => ({ ...prev, forme: 'bandeau' }))}
                     style={{
                       border: (formData.forme || 'bandeau') === 'bandeau' ? '2px solid #5b4fe8' : '1px solid rgba(255, 255, 255, 0.7)',
                       backgroundColor: (formData.forme || 'bandeau') === 'bandeau' ? '#ffffff' : '#dfe6ee',
-                      borderRadius: 8,
-                      padding: '6px 4px',
+                      borderRadius: 9,
+                      padding: '8px 4px',
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
@@ -743,10 +759,10 @@ export default function EventEditDrawer({
                       gap: 4
                     }}
                   >
-                    <svg width="42" height="16" viewBox="0 0 48 18">
+                    <svg width="48" height="18" viewBox="0 0 48 18">
                       <rect x="2" y="2" width="44" height="14" rx="2" fill="#5b4fe8" fillOpacity="0.35" stroke="#5b4fe8" strokeWidth="1.5" />
                     </svg>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: '#334155' }}>Bandeau</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#334155' }}>Bandeau</span>
                   </div>
 
                   <div
@@ -754,8 +770,8 @@ export default function EventEditDrawer({
                     style={{
                       border: formData.forme === 'ligne' ? '2px solid #5b4fe8' : '1px solid rgba(255, 255, 255, 0.7)',
                       backgroundColor: formData.forme === 'ligne' ? '#ffffff' : '#dfe6ee',
-                      borderRadius: 8,
-                      padding: '6px 4px',
+                      borderRadius: 9,
+                      padding: '8px 4px',
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
@@ -763,12 +779,12 @@ export default function EventEditDrawer({
                       gap: 4
                     }}
                   >
-                    <svg width="42" height="16" viewBox="0 0 48 18">
+                    <svg width="48" height="18" viewBox="0 0 48 18">
                       <line x1="6" y1="9" x2="42" y2="9" stroke="#5b4fe8" strokeWidth="2.5" />
                       <line x1="6" y1="4" x2="6" y2="14" stroke="#5b4fe8" strokeWidth="2" />
                       <line x1="42" y1="4" x2="42" y2="14" stroke="#5b4fe8" strokeWidth="2" />
                     </svg>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: '#334155' }}>Ligne |—|</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#334155' }}>Ligne |—|</span>
                   </div>
 
                   <div
@@ -776,8 +792,8 @@ export default function EventEditDrawer({
                     style={{
                       border: formData.forme === 'ruban' ? '2px solid #5b4fe8' : '1px solid rgba(255, 255, 255, 0.7)',
                       backgroundColor: formData.forme === 'ruban' ? '#ffffff' : '#dfe6ee',
-                      borderRadius: 8,
-                      padding: '6px 4px',
+                      borderRadius: 9,
+                      padding: '8px 4px',
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
@@ -785,18 +801,18 @@ export default function EventEditDrawer({
                       gap: 4
                     }}
                   >
-                    <svg width="42" height="16" viewBox="0 0 48 18">
+                    <svg width="48" height="18" viewBox="0 0 48 18">
                       <rect x="2" y="3" width="44" height="12" rx="6" fill="#5b4fe8" fillOpacity="0.25" stroke="#5b4fe8" strokeWidth="1.5" />
                     </svg>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: '#334155' }}>Ruban</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#334155' }}>Ruban</span>
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 2 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Tracé</span>
-                  <div style={{ display: 'flex', backgroundColor: '#dfe6ee', padding: 2, borderRadius: 6 }}>
+                  <div style={{ display: 'flex', backgroundColor: '#dfe6ee', padding: 2, borderRadius: 7 }}>
                     <button
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, style_trait: 'plein' }))}
@@ -836,7 +852,7 @@ export default function EventEditDrawer({
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Gravité</span>
-                  <div style={{ display: 'flex', backgroundColor: '#dfe6ee', padding: 2, borderRadius: 6 }}>
+                  <div style={{ display: 'flex', backgroundColor: '#dfe6ee', padding: 2, borderRadius: 7 }}>
                     <button
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, gravite: true }))}
@@ -875,7 +891,7 @@ export default function EventEditDrawer({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>
                     Opacité du fond
@@ -912,7 +928,7 @@ export default function EventEditDrawer({
             </div>
           )}
 
-          {/* Date (saisie manuelle + roulette) */}
+          {/* Date */}
           <HistoricalDateSelector
             label={formData.isRange ? 'Date de début' : 'Date'}
             required
@@ -941,12 +957,12 @@ export default function EventEditDrawer({
             />
           )}
 
-          {/* Couleur + Nuancier personnalisé */}
+          {/* Couleur */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
               Couleur
             </label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
               {COLOR_PRESETS.map((c) => {
                 const isSelected = (formData.couleur || '').toLowerCase() === c.stroke.toLowerCase();
                 return (
@@ -955,13 +971,15 @@ export default function EventEditDrawer({
                     type="button"
                     onClick={() => setFormData(prev => ({ ...prev, couleur: c.stroke }))}
                     style={{
-                      width: 22,
-                      height: 22,
+                      width: 24,
+                      height: 24,
                       borderRadius: '50%',
                       backgroundColor: c.stroke,
                       border: isSelected ? '2px solid #ffffff' : '2px solid transparent',
                       outline: isSelected ? '2px solid #5b4fe8' : 'none',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      transform: isSelected ? 'scale(1.15)' : 'scale(1)',
+                      transition: 'all 0.15s ease'
                     }}
                   />
                 );
@@ -973,8 +991,8 @@ export default function EventEditDrawer({
                   title="Nuancier personnalisé"
                   onClick={() => colorPickerRef.current?.click()}
                   style={{
-                    width: 24,
-                    height: 24,
+                    width: 26,
+                    height: 26,
                     borderRadius: '50%',
                     background: isCustomColor
                       ? formData.couleur
@@ -986,7 +1004,7 @@ export default function EventEditDrawer({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 800,
                     color: '#ffffff',
                     textShadow: '0 1px 2px rgba(0,0,0,0.6)'
@@ -1011,6 +1029,48 @@ export default function EventEditDrawer({
             </div>
           </div>
 
+          {/* Bouton Tags compact (ouvre la fenêtre dédiée) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              Tags
+            </label>
+            <button
+              type="button"
+              onClick={() => { setTagSearch(''); setIsTagsPickerOpen(true); }}
+              style={{
+                width: '100%',
+                padding: '9px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(255, 255, 255, 0.85)',
+                backgroundColor: '#eaf0f6',
+                boxShadow: '3px 3px 7px rgba(166, 180, 200, 0.45), -3px -3px 7px rgba(255, 255, 255, 0.9)',
+                color: '#1e293b',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#5b4fe8' }}>
+                {(formData.tags || []).join(', ') || 'Sélectionner'}
+              </span>
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: 8,
+                backgroundColor: '#dfe6ee',
+                color: '#475569',
+                fontSize: 10.5,
+                fontWeight: 700,
+                flexShrink: 0
+              }}>
+                {(formData.tags || []).length}
+              </span>
+            </button>
+          </div>
+
           {/* Importance */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
@@ -1019,126 +1079,51 @@ export default function EventEditDrawer({
             <div style={{
               display: 'flex',
               backgroundColor: '#dfe6ee',
-              borderRadius: 11,
+              borderRadius: 12,
               padding: 3,
-              gap: 3,
+              gap: 4,
               boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.85)'
             }}>
-              {[1, 2, 3, 4, 5].map((lvl) => (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, importance: lvl }))}
-                  style={{
-                    flex: 1,
-                    padding: '4px 0',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    backgroundColor: formData.importance === lvl ? '#5b4fe8' : 'transparent',
-                    color: formData.importance === lvl ? '#ffffff' : '#64748b'
-                  }}
-                >
-                  {lvl}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-              Tags
-            </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
-              {availableTags.map((tag) => {
-                const active = formData.tags?.includes(tag);
+              {[1, 2, 3, 4, 5].map((lvl) => {
+                const active = formData.importance === lvl;
                 return (
-                  <div
-                    key={tag}
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, importance: lvl }))}
                     style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      borderRadius: 13,
-                      backgroundColor: active ? '#5b4fe8' : '#eaf0f6',
-                      color: active ? '#ffffff' : '#334155',
-                      boxShadow: active
-                        ? 'inset 2px 2px 4px rgba(0, 0, 0, 0.2)'
-                        : '2px 2px 5px rgba(166, 180, 200, 0.45), -2px -2px 5px rgba(255, 255, 255, 0.9)',
-                      border: '1px solid rgba(255, 255, 255, 0.7)',
-                      overflow: 'hidden'
+                      flex: 1,
+                      padding: '5px 0',
+                      border: 'none',
+                      borderRadius: 9,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      backgroundColor: active ? '#5b4fe8' : 'transparent',
+                      color: active ? '#ffffff' : '#64748b',
+                      boxShadow: active ? '2px 2px 6px rgba(91, 79, 232, 0.35)' : 'none',
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData(prev => {
-                          const exists = prev.tags.includes(tag);
-                          if (exists && prev.tags.length === 1) return prev;
-                          return {
-                            ...prev,
-                            tags: exists ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
-                          };
-                        });
-                      }}
-                      style={{
-                        padding: '3px 6px 3px 9px',
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: 10.5,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        color: 'inherit'
-                      }}
-                    >
-                      {tag} {active ? '✓' : ''}
-                    </button>
-                    {availableTags.length > 1 && (
-                      <button
-                        type="button"
-                        title="Supprimer ce tag"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFormData(prev => {
-                            const filtered = prev.tags.filter(t => t !== tag);
-                            return { ...prev, tags: filtered.length > 0 ? filtered : prev.tags };
-                          });
-                          onDeleteTag(tag);
-                        }}
-                        style={{
-                          padding: '3px 7px 3px 3px',
-                          border: 'none',
-                          background: 'transparent',
-                          fontSize: 10.5,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          color: 'inherit',
-                          opacity: 0.75
-                        }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
+                    {lvl}
+                  </button>
                 );
               })}
             </div>
           </div>
 
           {/* Actions bas */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 'auto', paddingTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 6 }}>
             <button
               type="button"
               onClick={() => onDelete(event)}
               style={{
-                padding: '8px 14px',
-                borderRadius: 11,
+                padding: '9px 16px',
+                borderRadius: 12,
                 border: '1px solid #fecaca',
                 backgroundColor: '#fff1f2',
                 color: '#e11d48',
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 700,
                 cursor: 'pointer'
               }}
@@ -1150,15 +1135,15 @@ export default function EventEditDrawer({
               type="submit"
               disabled={isSaving}
               style={{
-                padding: '8px 18px',
-                borderRadius: 11,
+                padding: '9px 22px',
+                borderRadius: 12,
                 border: 'none',
                 backgroundColor: '#5b4fe8',
                 color: '#ffffff',
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 700,
                 cursor: 'pointer',
-                boxShadow: '3px 3px 8px rgba(91, 79, 232, 0.35)'
+                boxShadow: '4px 4px 10px rgba(91, 79, 232, 0.35)'
               }}
             >
               {isSaving ? 'Enregistrement...' : 'Enregistrer'}
@@ -1166,6 +1151,179 @@ export default function EventEditDrawer({
           </div>
         </form>
       </div>
+
+      {/* Fenêtre dédiée de sélection des Tags */}
+      {isTagsPickerOpen && (
+        <div
+          onClick={() => setIsTagsPickerOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 70,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              maxHeight: '75dvh',
+              backgroundColor: '#eaf0f6',
+              borderRadius: 22,
+              border: '1px solid rgba(255, 255, 255, 0.85)',
+              boxShadow: '12px 12px 28px rgba(15, 23, 42, 0.35)',
+              padding: '18px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              color: '#1e293b'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#5b4fe8' }}>
+                Tags
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsTagsPickerOpen(false)}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  backgroundColor: '#eaf0f6',
+                  border: '1px solid rgba(255, 255, 255, 0.85)',
+                  boxShadow: '2px 2px 5px rgba(166, 180, 200, 0.5)',
+                  color: '#64748b',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Rechercher..."
+              value={tagSearch}
+              onChange={(e) => setTagSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 11px',
+                borderRadius: 11,
+                border: 'none',
+                backgroundColor: '#dfe6ee',
+                boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.5)',
+                fontSize: 12,
+                color: '#1e293b',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 240, overflowY: 'auto', paddingRight: 3 }}>
+              {filteredTags.map((tag) => {
+                const active = formData.tags?.includes(tag);
+                return (
+                  <div
+                    key={tag}
+                    onClick={() => {
+                      setFormData(prev => {
+                        const exists = prev.tags.includes(tag);
+                        if (exists && prev.tags.length === 1) return prev;
+                        return {
+                          ...prev,
+                          tags: exists ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
+                        };
+                      });
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '7px 10px',
+                      borderRadius: 10,
+                      backgroundColor: active ? '#5b4fe8' : '#ffffff',
+                      color: active ? '#ffffff' : '#1e293b',
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span>{tag}</span>
+                    <span>{active ? '✓' : ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                enterKeyHint="done"
+                value={newTagInput}
+                onChange={(e) => setNewTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddTagLocal();
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '7px 10px',
+                  borderRadius: 10,
+                  border: '1px dashed #94a3b8',
+                  backgroundColor: '#eaf0f6',
+                  fontSize: 11.5,
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleAddTagLocal}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 10,
+                  border: 'none',
+                  backgroundColor: '#5b4fe8',
+                  color: '#ffffff',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                +
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsTagsPickerOpen(false)}
+              style={{
+                width: '100%',
+                padding: '9px 0',
+                borderRadius: 11,
+                border: 'none',
+                backgroundColor: '#5b4fe8',
+                color: '#ffffff',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

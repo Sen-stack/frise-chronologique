@@ -4,6 +4,7 @@ import { formatYear, DEFAULT_TAG_PALETTE } from '../utils/timelineMath.js';
 export default function FilterDrawer({
   isOpen = true,
   onToggleOpen,
+  onOpenTagThemeModal,
   filterMode,
   setFilterMode,
   availableTags = [],
@@ -75,7 +76,6 @@ export default function FilterDrawer({
 
   const innerContent = (
     <>
-      {/* En-tête : CHRONOS + Bouton icône seule Jour/Nuit (+ Fermer sur mobile) */}
       <div
         style={{
           padding: '16px 16px 12px 16px',
@@ -157,8 +157,31 @@ export default function FilterDrawer({
         </div>
       </div>
 
-      {/* Corps déroulant */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* Bouton Créer Tag & Thématique (navigateur PC uniquement) */}
+        {!isMobile && onOpenTagThemeModal && (
+          <button
+            type="button"
+            onClick={onOpenTagThemeModal}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 14,
+              border: borderLight,
+              backgroundColor: baseBg,
+              boxShadow: cardShadow,
+              color: accentColor,
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              textAlign: 'center',
+              flexShrink: 0
+            }}
+          >
+            + Tag & Thématique
+          </button>
+        )}
 
         {/* SECTION 1 : CALQUE */}
         <div
@@ -575,7 +598,6 @@ export default function FilterDrawer({
     </>
   );
 
-  // Version mobile : pop-up modale uniquement quand ouverte
   if (isMobile) {
     if (!isOpen) return null;
     return (
@@ -617,7 +639,6 @@ export default function FilterDrawer({
     );
   }
 
-  // Version navigateur PC : volet latéral gauche
   return (
     <div
       style={{
@@ -640,7 +661,6 @@ export default function FilterDrawer({
         userSelect: 'none'
       }}
     >
-      {/* Bouton replier / déplier */}
       <button
         type="button"
         onClick={onToggleOpen}

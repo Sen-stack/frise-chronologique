@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { COLOR_PRESETS, MONTHS_FR, formatDetailedDate } from '../utils/timelineMath.js';
 
 function WheelColumn({ items, value, onChange, width = '100%' }) {
@@ -32,7 +32,6 @@ function WheelColumn({ items, value, onChange, width = '100%' }) {
 
   return (
     <div style={{ position: 'relative', height: itemHeight * 3, width, overflow: 'hidden', userSelect: 'none' }}>
-      {/* Bande centrale de sélection */}
       <div
         style={{
           position: 'absolute',
@@ -182,7 +181,6 @@ function HistoricalDateSelector({
         )}
       </div>
 
-      {/* Saisie manuelle année + Ère BCE / CE */}
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="number"
@@ -238,7 +236,6 @@ function HistoricalDateSelector({
         </div>
       </div>
 
-      {/* Roulette iOS-like : Mois / Jour / Année */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1.35fr 0.85fr 1fr',
@@ -306,10 +303,13 @@ export default function EventModal({
   onDeleteGroup = () => {}
 }) {
   const colorPickerRef = useRef(null);
+  const [isTagsPickerOpen, setIsTagsPickerOpen] = useState(false);
+  const [tagSearch, setTagSearch] = useState('');
 
   if (!isOpen) return null;
 
   const isCustomColor = !COLOR_PRESETS.some(c => c.stroke.toLowerCase() === (formData.couleur || '').toLowerCase());
+  const filteredTags = availableTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
 
   const neumorphicInput = {
     width: '100%',
@@ -343,15 +343,15 @@ export default function EventModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 460,
-          maxHeight: '90vh',
+          maxWidth: 450,
+          maxHeight: '90dvh',
           overflowY: 'auto',
           backgroundColor: '#eaf0f6',
           borderRadius: 24,
           boxShadow: '12px 12px 28px rgba(166, 180, 200, 0.55), -10px -10px 24px rgba(255, 255, 255, 0.9)',
           border: '1px solid rgba(255, 255, 255, 0.85)',
           color: '#1e293b',
-          padding: '20px 24px',
+          padding: '20px 22px',
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
@@ -359,7 +359,6 @@ export default function EventModal({
           position: 'relative'
         }}
       >
-        {/* Bouton fermer discret en haut à droite */}
         <button
           type="button"
           onClick={onClose}
@@ -401,7 +400,7 @@ export default function EventModal({
           </div>
         )}
 
-        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           {/* Nom */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingRight: 30 }}>
             <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
@@ -525,7 +524,7 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Sélecteur Ponctuel / Période (sans émoji) */}
+          {/* Sélecteur Ponctuel / Période */}
           <div
             style={{
               display: 'flex',
@@ -833,7 +832,7 @@ export default function EventModal({
             </div>
           )}
 
-          {/* Date (saisie manuelle + roulette) */}
+          {/* Date */}
           <HistoricalDateSelector
             label={isRange ? 'Date de début' : 'Date'}
             required
@@ -862,7 +861,7 @@ export default function EventModal({
             />
           )}
 
-          {/* Palette de couleurs + Nuancier personnalisé */}
+          {/* Couleur */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
               Couleur
@@ -890,7 +889,6 @@ export default function EventModal({
                 );
               })}
 
-              {/* Bouton nuancier personnalisé (arc-en-ciel + sélecteur natif) */}
               <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
                 <button
                   type="button"
@@ -935,115 +933,46 @@ export default function EventModal({
             </div>
           </div>
 
-          {/* Tags */}
+          {/* Bouton Tags compact (ouvre la fenêtre dédiée) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4 }}>
               Tags
             </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              {availableTags.map((tag) => {
-                const active = formData.tags?.includes(tag);
-                return (
-                  <div
-                    key={tag}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      borderRadius: 14,
-                      backgroundColor: active ? '#5b4fe8' : '#eaf0f6',
-                      color: active ? '#ffffff' : '#334155',
-                      boxShadow: active
-                        ? 'inset 2px 2px 4px rgba(0, 0, 0, 0.2)'
-                        : '3px 3px 6px rgba(166, 180, 200, 0.45), -3px -3px 6px rgba(255, 255, 255, 0.9)',
-                      border: '1px solid rgba(255, 255, 255, 0.7)',
-                      transition: 'all 0.15s ease',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onToggleTag(tag)}
-                      style={{
-                        padding: '4px 6px 4px 10px',
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        color: 'inherit'
-                      }}
-                    >
-                      {tag} {active ? '✓' : ''}
-                    </button>
-                    {availableTags.length > 1 && (
-                      <button
-                        type="button"
-                        title="Supprimer ce tag"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteTag(tag);
-                        }}
-                        style={{
-                          padding: '4px 8px 4px 4px',
-                          border: 'none',
-                          background: 'transparent',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          color: 'inherit',
-                          opacity: 0.75
-                        }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <input
-                  type="text"
-                  enterKeyHint="done"
-                  value={newTagInput}
-                  onChange={(e) => setNewTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      onAddNewTag();
-                    }
-                  }}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 14,
-                    border: '1px dashed #94a3b8',
-                    backgroundColor: '#eaf0f6',
-                    fontSize: 11,
-                    color: '#1e293b',
-                    outline: 'none',
-                    width: 95
-                  }}
-                />
-                {newTagInput.trim() && (
-                  <button
-                    type="button"
-                    onClick={onAddNewTag}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: 14,
-                      border: 'none',
-                      backgroundColor: '#5b4fe8',
-                      color: '#ffffff',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    ✓
-                  </button>
-                )}
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => { setTagSearch(''); setIsTagsPickerOpen(true); }}
+              style={{
+                width: '100%',
+                padding: '9px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(255, 255, 255, 0.85)',
+                backgroundColor: '#eaf0f6',
+                boxShadow: '3px 3px 7px rgba(166, 180, 200, 0.45), -3px -3px 7px rgba(255, 255, 255, 0.9)',
+                color: '#1e293b',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#5b4fe8' }}>
+                {(formData.tags || []).join(', ') || 'Sélectionner'}
+              </span>
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: 8,
+                backgroundColor: '#dfe6ee',
+                color: '#475569',
+                fontSize: 10.5,
+                fontWeight: 700,
+                flexShrink: 0
+              }}>
+                {(formData.tags || []).length}
+              </span>
+            </button>
           </div>
 
           {/* Importance */}
@@ -1127,6 +1056,170 @@ export default function EventModal({
           </div>
         </form>
       </div>
+
+      {/* Fenêtre dédiée de sélection des Tags */}
+      {isTagsPickerOpen && (
+        <div
+          onClick={() => setIsTagsPickerOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 70,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              maxHeight: '75dvh',
+              backgroundColor: '#eaf0f6',
+              borderRadius: 22,
+              border: '1px solid rgba(255, 255, 255, 0.85)',
+              boxShadow: '12px 12px 28px rgba(15, 23, 42, 0.35)',
+              padding: '18px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              color: '#1e293b'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#5b4fe8' }}>
+                Tags
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsTagsPickerOpen(false)}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  backgroundColor: '#eaf0f6',
+                  border: '1px solid rgba(255, 255, 255, 0.85)',
+                  boxShadow: '2px 2px 5px rgba(166, 180, 200, 0.5)',
+                  color: '#64748b',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Rechercher..."
+              value={tagSearch}
+              onChange={(e) => setTagSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 11px',
+                borderRadius: 11,
+                border: 'none',
+                backgroundColor: '#dfe6ee',
+                boxShadow: 'inset 2px 2px 5px rgba(166, 180, 200, 0.5)',
+                fontSize: 12,
+                color: '#1e293b',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 240, overflowY: 'auto', paddingRight: 3 }}>
+              {filteredTags.map((tag) => {
+                const active = formData.tags?.includes(tag);
+                return (
+                  <div
+                    key={tag}
+                    onClick={() => onToggleTag(tag)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '7px 10px',
+                      borderRadius: 10,
+                      backgroundColor: active ? '#5b4fe8' : '#ffffff',
+                      color: active ? '#ffffff' : '#1e293b',
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span>{tag}</span>
+                    <span>{active ? '✓' : ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                enterKeyHint="done"
+                value={newTagInput}
+                onChange={(e) => setNewTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onAddNewTag();
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '7px 10px',
+                  borderRadius: 10,
+                  border: '1px dashed #94a3b8',
+                  backgroundColor: '#eaf0f6',
+                  fontSize: 11.5,
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="button"
+                onClick={onAddNewTag}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 10,
+                  border: 'none',
+                  backgroundColor: '#5b4fe8',
+                  color: '#ffffff',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                +
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsTagsPickerOpen(false)}
+              style={{
+                width: '100%',
+                padding: '9px 0',
+                borderRadius: 11,
+                border: 'none',
+                backgroundColor: '#5b4fe8',
+                color: '#ffffff',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

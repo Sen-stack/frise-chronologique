@@ -23,6 +23,7 @@ import EventModal from './EventModal.jsx';
 import KnowledgeSplitView from './KnowledgeSplitView.jsx';
 import EventEditDrawer from './EventEditDrawer.jsx';
 import HistoricalAtlas from './HistoricalAtlas.jsx';
+import TagThemeModal from './TagThemeModal.jsx';
 
 export default function TimelineCanvas() {
   const canvasMainRef = useRef(null);
@@ -64,6 +65,8 @@ export default function TimelineCanvas() {
   const [newGroupInput, setNewGroupInput] = useState('');
 
   const [isFilterOpen, setIsFilterOpen] = useState(() => window.innerWidth >= 768);
+  const [isTagThemeModalOpen, setIsTagThemeModalOpen] = useState(false);
+
   const [selectedTags, setSelectedTags] = useState(() => {
     let hidden = [];
     try { hidden = JSON.parse(localStorage.getItem('chronos_hidden_tags') || '[]'); } catch {}
@@ -561,7 +564,30 @@ export default function TimelineCanvas() {
     };
   }, [isEditDrawerOpen, activeChapter]);
 
-  // ACTIONS SUPABASE & MODALES
+  // ACTIONS TAGS & THÉMATIQUES GLOBALES
+  const handleCreateTagGlobal = (rawName) => {
+    const trimmed = rawName.trim();
+    if (!trimmed) return;
+    if (hiddenDefaultTags.includes(trimmed)) {
+      const nextHidden = hiddenDefaultTags.filter(t => t !== trimmed);
+      setHiddenDefaultTags(nextHidden);
+      localStorage.setItem('chronos_hidden_tags', JSON.stringify(nextHidden));
+    }
+    if (!availableTags.includes(trimmed)) {
+      setAvailableTags(prev => [...prev, trimmed]);
+      setSelectedTags(prev => [...prev, trimmed]);
+    }
+  };
+
+  const handleCreateGroupGlobal = (rawName) => {
+    const trimmed = rawName.trim();
+    if (!trimmed) return;
+    if (!availableGroups.includes(trimmed)) {
+      setAvailableGroups(prev => [...prev, trimmed]);
+      setSelectedGroups(prev => [...prev, trimmed]);
+    }
+  };
+
   const handleOpenCreateModal = () => {
     setFormError('');
     setIsRange(false);
@@ -747,10 +773,7 @@ export default function TimelineCanvas() {
 
     let nextTags = [...formData.tags];
     if (pendingTag) {
-      if (!availableTags.includes(pendingTag)) {
-        setAvailableTags(prev => [...prev, pendingTag]);
-        setSelectedTags(prev => [...prev, pendingTag]);
-      }
+      handleCreateTagGlobal(pendingTag);
       if (!nextTags.includes(pendingTag)) {
         nextTags.push(pendingTag);
       }
@@ -759,6 +782,7 @@ export default function TimelineCanvas() {
 
     const chosenGroup = pendingGroup || (formData.groupe_id ? formData.groupe_id.trim() : null);
     if (pendingGroup) {
+      handleCreateGroupGlobal(pendingGroup);
       setNewGroupInput('');
     }
 
@@ -855,6 +879,7 @@ export default function TimelineCanvas() {
         onResetFullView={handleResetToFullChapterView}
         onOpenCreateModal={handleOpenCreateModal}
         onOpenFilterModal={() => setIsFilterOpen(true)}
+        onOpenTagThemeModal={() => setIsTagThemeModalOpen(true)}
         activeSelection={activeSelection}
         onOpenEditDrawer={handleOpenEditDrawer}
         onStartDrawTerritory={handleStartDrawTerritory}
@@ -891,6 +916,61 @@ export default function TimelineCanvas() {
               overflow: 'hidden'
             }}
           >
+            {/* Contrôles Relief & Synchroniser en haut à droite de la carte sur mobile */}
+            {isMobileScreen && (
+              <div style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                zIndex: 25,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setIsReliefActive(prev => !prev)}
+                  title="Relief"
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 14,
+                    backgroundColor: isReliefActive ? '#5b4fe8' : 'rgba(234, 240, 246, 0.92)',
+                    border: '1px solid rgba(255, 255, 255, 0.85)',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.25)',
+                    color: isReliefActive ? '#ffffff' : '#1e293b',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Relief
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRecalibrateTrigger(t => t + 1)}
+                  title="Synchroniser la carte"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(234, 240, 246, 0.92)',
+                    border: '1px solid rgba(255, 255, 255, 0.85)',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.25)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="#5b4fe8">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             <HistoricalAtlas
               viewRange={viewRange}
               targetDate={timelineCursorYear}
@@ -983,6 +1063,7 @@ export default function TimelineCanvas() {
       <FilterDrawer
         isOpen={isFilterOpen}
         onToggleOpen={() => setIsFilterOpen(!isFilterOpen)}
+        onOpenTagThemeModal={() => setIsTagThemeModalOpen(true)}
         filterMode={filterMode}
         setFilterMode={setFilterMode}
         availableTags={availableTags}
@@ -1010,6 +1091,17 @@ export default function TimelineCanvas() {
         setCurrentTheme={setCurrentTheme}
         mapLayers={mapLayers}
         onToggleMapLayer={handleToggleMapLayer}
+      />
+
+      <TagThemeModal
+        isOpen={isTagThemeModalOpen}
+        onClose={() => setIsTagThemeModalOpen(false)}
+        availableTags={availableTags}
+        onCreateTag={handleCreateTagGlobal}
+        onDeleteTag={handleDeleteTag}
+        availableGroups={availableGroups}
+        onCreateGroup={handleCreateGroupGlobal}
+        onDeleteGroup={handleDeleteGroup}
       />
 
       {selectedEvent && (() => {
@@ -1059,10 +1151,7 @@ export default function TimelineCanvas() {
         onAddNewTag={() => {
           const trimmed = newTagInput.trim();
           if (!trimmed) return;
-          if (!availableTags.includes(trimmed)) {
-            setAvailableTags(prev => [...prev, trimmed]);
-            setSelectedTags(prev => [...prev, trimmed]);
-          }
+          handleCreateTagGlobal(trimmed);
           if (!formData.tags.includes(trimmed)) {
             setFormData(prev => ({ ...prev, tags: [...prev.tags, trimmed] }));
           }
@@ -1085,10 +1174,7 @@ export default function TimelineCanvas() {
         onAddNewGroup={() => {
           const trimmed = newGroupInput.trim();
           if (!trimmed) return;
-          if (!availableGroups.includes(trimmed)) {
-            setAvailableGroups(prev => [...prev, trimmed]);
-            setSelectedGroups(prev => [...prev, trimmed]);
-          }
+          handleCreateGroupGlobal(trimmed);
           setFormData(prev => ({ ...prev, groupe_id: trimmed }));
           setNewGroupInput('');
         }}
@@ -1102,9 +1188,9 @@ export default function TimelineCanvas() {
         onSave={handleSaveFromDrawer}
         onDelete={handleDeleteEvent}
         availableTags={availableTags}
-        onDeleteTag={handleDeleteTag}
-        onToggleTag={() => {}}
+        onCreateTag={handleCreateTagGlobal}
         availableGroups={availableGroups}
+        onCreateGroup={handleCreateGroupGlobal}
         onDeleteGroup={handleDeleteGroup}
       />
 
