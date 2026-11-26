@@ -922,10 +922,12 @@ export default function TimelineCanvas() {
                 position: 'absolute',
                 top: 10,
                 right: 10,
-                zIndex: 25,
+                zIndex: 1000,
                 display: 'flex',
-                alignItems: 'center',
-                gap: 6
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: 6,
+                pointerEvents: 'auto'
               }}>
                 <button
                   type="button"
@@ -934,7 +936,7 @@ export default function TimelineCanvas() {
                   style={{
                     padding: '5px 10px',
                     borderRadius: 14,
-                    backgroundColor: isReliefActive ? '#5b4fe8' : 'rgba(234, 240, 246, 0.92)',
+                    backgroundColor: isReliefActive ? '#5b4fe8' : 'rgba(234, 240, 246, 0.94)',
                     border: '1px solid rgba(255, 255, 255, 0.85)',
                     boxShadow: '0 2px 8px rgba(15, 23, 42, 0.25)',
                     color: isReliefActive ? '#ffffff' : '#1e293b',
@@ -954,7 +956,7 @@ export default function TimelineCanvas() {
                     width: 28,
                     height: 28,
                     borderRadius: '50%',
-                    backgroundColor: 'rgba(234, 240, 246, 0.92)',
+                    backgroundColor: 'rgba(234, 240, 246, 0.94)',
                     border: '1px solid rgba(255, 255, 255, 0.85)',
                     boxShadow: '0 2px 8px rgba(15, 23, 42, 0.25)',
                     cursor: 'pointer',
